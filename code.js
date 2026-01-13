@@ -1,5 +1,5 @@
 // Sitemap Generator - Figma Plugin
-// Creates a visual sitemap from screenshots
+// Creates a visual sitemap from screenshots with tiled image support
 
 // Layout constants
 const CARD_GAP = 80;
@@ -16,7 +16,7 @@ const COLORS = {
   url: { r: 0.5, g: 0.5, b: 0.5 }
 };
 
-figma.showUI(__html__, { width: 280, height: 280 });
+figma.showUI(__html__, { width: 300, height: 340 });
 
 figma.ui.onmessage = async (msg) => {
   if (msg.type === 'create-sitemap') {
@@ -24,207 +24,287 @@ figma.ui.onmessage = async (msg) => {
       await createSitemap(msg.site, msg.pages);
       figma.ui.postMessage({ type: 'done', count: msg.pages.length });
     } catch (err) {
+      console.error(err);
       figma.ui.postMessage({ type: 'error', message: err.message });
     }
   }
 };
 
 async function createSitemap(site, pages) {
-  // Load fonts
-  await figma.loadFontAsync({ family: "Inter", style: "Semi Bold" });
+  // Create parent frame
+  const frame = figma.createFrame();
+  frame.name = `Sitemap - ${site}`;
+  frame.fills = [{ type: 'SOLID', color: { r: 0.95, g: 0.95, b: 0.95 } }];
+
+  // Load font
+  await figma.loadFontAsync({ family: "Inter", style: "Bold" });
   await figma.loadFontAsync({ family: "Inter", style: "Regular" });
-  
-  // Create main frame
-  const mainFrame = figma.createFrame();
-  mainFrame.name = `Sitemap - ${site}`;
-  mainFrame.fills = [{ type: 'SOLID', color: { r: 0.97, g: 0.97, b: 0.97 } }];
-  mainFrame.layoutMode = 'NONE';
-  
-  const pageCards = new Map();
+
+  // Group pages by depth
   const pagesByDepth = new Map();
-  
-  for (const page of pages) {
-    // Create card
-    const card = figma.createFrame();
-    card.name = page.title;
-    card.fills = [{ type: 'SOLID', color: COLORS.cardBg }];
-    card.strokes = [{ type: 'SOLID', color: COLORS.cardStroke }];
-    card.strokeWeight = 1;
-    card.cornerRadius = 12;
-    card.layoutMode = 'VERTICAL';
-    card.paddingTop = CARD_PADDING;
-    card.paddingBottom = CARD_PADDING;
-    card.paddingLeft = CARD_PADDING;
-    card.paddingRight = CARD_PADDING;
-    card.itemSpacing = 12;
-    card.primaryAxisSizingMode = 'AUTO';
-    card.counterAxisSizingMode = 'AUTO';
-    
-    // Title
-    const title = figma.createText();
-    title.characters = page.title;
-    title.fontSize = 14;
-    title.fontName = { family: "Inter", style: "Semi Bold" };
-    title.fills = [{ type: 'SOLID', color: COLORS.title }];
-    card.appendChild(title);
-    
-    // URL
-    const url = figma.createText();
-    url.characters = page.path;
-    url.fontSize = 11;
-    url.fontName = { family: "Inter", style: "Regular" };
-    url.fills = [{ type: 'SOLID', color: COLORS.url }];
-    card.appendChild(url);
-    
-    // Screenshots container
-    const screenshotsContainer = figma.createFrame();
-    screenshotsContainer.name = "Screenshots";
-    screenshotsContainer.fills = [];
-    screenshotsContainer.layoutMode = 'HORIZONTAL';
-    screenshotsContainer.itemSpacing = SCREENSHOT_GAP;
-    screenshotsContainer.primaryAxisSizingMode = 'AUTO';
-    screenshotsContainer.counterAxisSizingMode = 'AUTO';
-    
-    // Desktop screenshot
-    const desktopImage = figma.createImage(new Uint8Array(page.desktopImage));
-    const desktopRect = figma.createRectangle();
-    desktopRect.name = "Desktop";
-    desktopRect.resize(page.desktopWidth, page.desktopHeight);
-    desktopRect.fills = [{ type: 'IMAGE', imageHash: desktopImage.hash, scaleMode: 'FILL' }];
-    desktopRect.cornerRadius = 4;
-    screenshotsContainer.appendChild(desktopRect);
-    
-    // Mobile screenshot
-    const mobileImage = figma.createImage(new Uint8Array(page.mobileImage));
-    const mobileRect = figma.createRectangle();
-    mobileRect.name = "Mobile";
-    mobileRect.resize(page.mobileWidth, page.mobileHeight);
-    mobileRect.fills = [{ type: 'IMAGE', imageHash: mobileImage.hash, scaleMode: 'FILL' }];
-    mobileRect.cornerRadius = 4;
-    screenshotsContainer.appendChild(mobileRect);
-    
-    card.appendChild(screenshotsContainer);
-    mainFrame.appendChild(card);
-    
-    pageCards.set(page.slug, { card, page });
-    
-    if (!pagesByDepth.has(page.depth)) {
-      pagesByDepth.set(page.depth, []);
+  pages.forEach(page => {
+    const depth = page.depth || 0;
+    if (!pagesByDepth.has(depth)) {
+      pagesByDepth.set(depth, []);
     }
-    pagesByDepth.get(page.depth).push(page.slug);
-  }
+    pagesByDepth.get(depth).push(page);
+  });
+
+  // Calculate card dimensions based on first page
+  const firstPage = pages[0];
+  const desktopW = firstPage.desktopWidth || 300;
+  const desktopH = firstPage.desktopHeight || 200;
+  const mobileW = firstPage.mobileWidth || 90;
+  const mobileH = firstPage.mobileHeight || 200;
   
-  // Position cards in tree layout
-  let currentY = CARD_PADDING;
-  const positions = new Map();
+  const cardWidth = CARD_PADDING * 2 + desktopW + SCREENSHOT_GAP + mobileW;
+  const cardHeight = CARD_PADDING * 2 + 50 + Math.max(desktopH, mobileH);
+
+  // Track card positions for connectors
+  const cardPositions = new Map();
+  const cards = [];
+  
+  let yOffset = 0;
+
+  // Sort depths
   const depths = Array.from(pagesByDepth.keys()).sort((a, b) => a - b);
-  
+
   for (const depth of depths) {
-    const slugs = pagesByDepth.get(depth);
-    let currentX = CARD_PADDING;
-    let maxHeight = 0;
+    const depthPages = pagesByDepth.get(depth);
     
     // Group by parent
     const byParent = new Map();
-    for (const slug of slugs) {
-      const { page } = pageCards.get(slug);
-      const parent = page.parent || '__root__';
-      if (!byParent.has(parent)) byParent.set(parent, []);
-      byParent.get(parent).push(slug);
-    }
-    
-    for (const [parent, groupSlugs] of byParent) {
-      let groupStartX = currentX;
-      
-      if (parent !== '__root__' && positions.has(parent)) {
-        const parentPos = positions.get(parent);
-        const parentCard = pageCards.get(parent).card;
-        groupStartX = parentPos.x + (parentCard.width / 2);
+    depthPages.forEach(page => {
+      const parent = page.parent || 'root';
+      if (!byParent.has(parent)) {
+        byParent.set(parent, []);
+      }
+      byParent.get(parent).push(page);
+    });
+
+    // Calculate total width needed
+    let totalWidth = 0;
+    byParent.forEach((children) => {
+      totalWidth += children.length * (cardWidth + CARD_GAP);
+    });
+    totalWidth -= CARD_GAP;
+
+    let xOffset = -totalWidth / 2;
+
+    for (const [parentSlug, children] of byParent) {
+      for (const page of children) {
+        const card = await createCard(page, xOffset, yOffset, cardWidth, cardHeight);
+        frame.appendChild(card);
+        cards.push(card);
         
-        let totalChildrenWidth = 0;
-        for (const slug of groupSlugs) {
-          totalChildrenWidth += pageCards.get(slug).card.width + CARD_GAP;
-        }
-        totalChildrenWidth -= CARD_GAP;
-        
-        groupStartX = groupStartX - (totalChildrenWidth / 2);
-        groupStartX = Math.max(currentX, groupStartX);
+        cardPositions.set(page.slug, {
+          x: xOffset + cardWidth / 2,
+          y: yOffset,
+          width: cardWidth,
+          height: cardHeight,
+          parent: page.parent
+        });
+
+        xOffset += cardWidth + CARD_GAP;
       }
-      
-      currentX = groupStartX;
-      
-      for (const slug of groupSlugs) {
-        const { card } = pageCards.get(slug);
-        card.x = currentX;
-        card.y = currentY;
-        positions.set(slug, { x: currentX, y: currentY });
-        currentX += card.width + CARD_GAP;
-        maxHeight = Math.max(maxHeight, card.height);
-      }
-      
-      currentX += CARD_GAP;
     }
+
+    yOffset += cardHeight + LEVEL_GAP;
+  }
+
+  // Draw connectors
+  for (const [slug, pos] of cardPositions) {
+    if (pos.parent && cardPositions.has(pos.parent)) {
+      const parentPos = cardPositions.get(pos.parent);
+      const connector = createConnector(
+        parentPos.x, parentPos.y + parentPos.height,
+        pos.x, pos.y
+      );
+      frame.insertChild(0, connector);
+    }
+  }
+
+  // Resize frame to fit content
+  const bounds = getBounds(cards);
+  frame.resize(
+    bounds.width + 200,
+    bounds.height + 200
+  );
+  
+  // Center content in frame
+  cards.forEach(card => {
+    card.x += 100 - bounds.minX;
+    card.y += 100 - bounds.minY;
+  });
+
+  // Reposition connectors
+  for (let i = 0; i < frame.children.length; i++) {
+    const child = frame.children[i];
+    if (child.type === 'LINE' || child.type === 'GROUP') {
+      child.x += 100 - bounds.minX;
+      child.y += 100 - bounds.minY;
+    }
+  }
+
+  // Position and select
+  frame.x = figma.viewport.center.x - frame.width / 2;
+  frame.y = figma.viewport.center.y - frame.height / 2;
+  
+  figma.currentPage.selection = [frame];
+  figma.viewport.scrollAndZoomIntoView([frame]);
+}
+
+// Create a card with tiled images
+async function createCard(page, x, y, width, height) {
+  const card = figma.createFrame();
+  card.name = page.title || page.slug;
+  card.x = x;
+  card.y = y;
+  card.resize(width, height);
+  card.fills = [{ type: 'SOLID', color: COLORS.cardBg }];
+  card.strokes = [{ type: 'SOLID', color: COLORS.cardStroke }];
+  card.strokeWeight = 1;
+  card.cornerRadius = 8;
+
+  // Title
+  const title = figma.createText();
+  title.characters = page.title || page.slug;
+  title.fontSize = 16;
+  title.fontName = { family: "Inter", style: "Bold" };
+  title.fills = [{ type: 'SOLID', color: COLORS.title }];
+  title.x = CARD_PADDING;
+  title.y = CARD_PADDING;
+  card.appendChild(title);
+
+  // URL
+  const url = figma.createText();
+  url.characters = page.path || '/';
+  url.fontSize = 12;
+  url.fontName = { family: "Inter", style: "Regular" };
+  url.fills = [{ type: 'SOLID', color: COLORS.url }];
+  url.x = CARD_PADDING;
+  url.y = CARD_PADDING + 24;
+  card.appendChild(url);
+
+  const screenshotY = CARD_PADDING + 50;
+  let screenshotX = CARD_PADDING;
+
+  // Desktop screenshot (with tiles support)
+  if (page.desktopTiles && page.desktopTiles.length > 0) {
+    const desktopGroup = await createTiledImage(
+      page.desktopTiles, 
+      page.desktopWidth, 
+      page.desktopHeight,
+      'Desktop'
+    );
+    desktopGroup.x = screenshotX;
+    desktopGroup.y = screenshotY;
+    card.appendChild(desktopGroup);
+    screenshotX += page.desktopWidth + SCREENSHOT_GAP;
+  }
+
+  // Mobile screenshot (with tiles support)
+  if (page.mobileTiles && page.mobileTiles.length > 0) {
+    const mobileGroup = await createTiledImage(
+      page.mobileTiles,
+      page.mobileWidth,
+      page.mobileHeight,
+      'Mobile'
+    );
+    mobileGroup.x = screenshotX;
+    mobileGroup.y = screenshotY;
+    card.appendChild(mobileGroup);
+  }
+
+  return card;
+}
+
+// Create image from tiles (like Insert Big Image)
+async function createTiledImage(tiles, totalWidth, totalHeight, name) {
+  const imageNodes = [];
+  
+  for (const tile of tiles) {
+    const rect = figma.createRectangle();
+    rect.name = 'Image Tile';
+    rect.x = tile.x;
+    rect.y = tile.y;
+    rect.resize(tile.width, tile.height);
     
-    currentY += maxHeight + LEVEL_GAP;
+    // Create image from bytes
+    const imageHash = figma.createImage(new Uint8Array(tile.bytes)).hash;
+    rect.fills = [{
+      type: 'IMAGE',
+      imageHash: imageHash,
+      scaleMode: 'FILL'
+    }];
+    
+    imageNodes.push(rect);
   }
   
-  // Draw connectors using simple lines
-  for (const [slug, { card, page }] of pageCards) {
-    if (page.parent && pageCards.has(page.parent)) {
-      const parentCard = pageCards.get(page.parent).card;
-      
-      const startX = parentCard.x + parentCard.width / 2;
-      const startY = parentCard.y + parentCard.height;
-      const endX = card.x + card.width / 2;
-      const endY = card.y;
-      
-      // Create line using a simple connector (3 segments: down, across, down)
-      const midY = startY + (endY - startY) / 2;
-      
-      // Vertical line from parent
-      const line1 = figma.createLine();
-      line1.x = startX;
-      line1.y = startY;
-      line1.rotation = -90;
-      line1.resize(midY - startY, 0);
-      line1.strokes = [{ type: 'SOLID', color: COLORS.connector }];
-      line1.strokeWeight = 2;
-      mainFrame.insertChild(0, line1);
-      
-      // Horizontal line
-      if (Math.abs(endX - startX) > 1) {
-        const line2 = figma.createLine();
-        line2.x = Math.min(startX, endX);
-        line2.y = midY;
-        line2.resize(Math.abs(endX - startX), 0);
-        line2.strokes = [{ type: 'SOLID', color: COLORS.connector }];
-        line2.strokeWeight = 2;
-        mainFrame.insertChild(0, line2);
-      }
-      
-      // Vertical line to child
-      const line3 = figma.createLine();
-      line3.x = endX;
-      line3.y = midY;
-      line3.rotation = -90;
-      line3.resize(endY - midY, 0);
-      line3.strokes = [{ type: 'SOLID', color: COLORS.connector }];
-      line3.strokeWeight = 2;
-      mainFrame.insertChild(0, line3);
-    }
+  // Group tiles if multiple
+  if (imageNodes.length === 1) {
+    imageNodes[0].name = name;
+    return imageNodes[0];
   }
   
-  // Resize main frame
-  let maxX = 0, maxY = 0;
-  for (const child of mainFrame.children) {
-    if ('x' in child && 'width' in child) {
-      maxX = Math.max(maxX, child.x + child.width);
-    }
-    if ('y' in child && 'height' in child) {
-      maxY = Math.max(maxY, child.y + child.height);
-    }
-  }
-  mainFrame.resize(maxX + CARD_PADDING, maxY + CARD_PADDING);
+  const group = figma.group(imageNodes, figma.currentPage);
+  group.name = name;
+  return group;
+}
+
+function createConnector(x1, y1, x2, y2) {
+  const midY = y1 + (y2 - y1) / 2;
   
-  figma.viewport.scrollAndZoomIntoView([mainFrame]);
+  // Create 3-segment path: vertical, horizontal, vertical
+  const lines = [];
+  
+  // Top vertical segment
+  const line1 = figma.createLine();
+  line1.x = x1;
+  line1.y = y1;
+  line1.resize(0, midY - y1);
+  line1.rotation = -90;
+  line1.strokes = [{ type: 'SOLID', color: COLORS.connector }];
+  line1.strokeWeight = 2;
+  lines.push(line1);
+  
+  // Horizontal segment
+  const line2 = figma.createLine();
+  line2.x = Math.min(x1, x2);
+  line2.y = midY;
+  line2.resize(Math.abs(x2 - x1), 0);
+  line2.strokes = [{ type: 'SOLID', color: COLORS.connector }];
+  line2.strokeWeight = 2;
+  lines.push(line2);
+  
+  // Bottom vertical segment
+  const line3 = figma.createLine();
+  line3.x = x2;
+  line3.y = midY;
+  line3.resize(0, y2 - midY);
+  line3.rotation = -90;
+  line3.strokes = [{ type: 'SOLID', color: COLORS.connector }];
+  line3.strokeWeight = 2;
+  lines.push(line3);
+  
+  const group = figma.group(lines, figma.currentPage);
+  group.name = 'Connector';
+  return group;
+}
+
+function getBounds(nodes) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  nodes.forEach(node => {
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + node.width);
+    maxY = Math.max(maxY, node.y + node.height);
+  });
+  
+  return {
+    minX, minY, maxX, maxY,
+    width: maxX - minX,
+    height: maxY - minY
+  };
 }

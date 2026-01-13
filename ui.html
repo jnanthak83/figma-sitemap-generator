@@ -5,7 +5,7 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Inter, sans-serif; font-size: 12px; padding: 16px; background: #fff; }
     h2 { font-size: 14px; margin-bottom: 12px; }
-    label { display: block; margin-bottom: 4px; color: #333; }
+    label { display: block; margin-bottom: 4px; color: #333; font-weight: 500; }
     input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; }
     button { width: 100%; padding: 10px; background: #18A0FB; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     button:hover { background: #0d8de8; }
@@ -15,6 +15,10 @@
     .success { background: #d4edda; color: #155724; }
     .error { background: #f8d7da; color: #721c24; }
     .info { background: #e7f3ff; padding: 8px; border-radius: 4px; font-size: 11px; margin-bottom: 12px; color: #0066cc; }
+    .refresh-btn { background: #f0f0f0; color: #333; padding: 6px 10px; font-size: 11px; margin-left: 8px; width: auto; display: inline; }
+    .refresh-btn:hover { background: #e0e0e0; }
+    .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .project-info { font-size: 11px; color: #666; margin-top: -8px; margin-bottom: 12px; }
   </style>
 </head>
 <body>
@@ -24,7 +28,16 @@
   <label>Server URL</label>
   <input type="text" id="serverUrl" value="http://localhost:3000">
   
-  <label>Image Quality</label>
+  <div class="header-row">
+    <label style="margin-bottom: 0;">Project</label>
+    <button class="refresh-btn" onclick="loadProjects()">↻ Refresh</button>
+  </div>
+  <select id="projectSelect">
+    <option value="">Loading projects...</option>
+  </select>
+  <div id="projectInfo" class="project-info"></div>
+  
+  <label>Image Size</label>
   <select id="imageSize">
     <option value="200">Small (200px)</option>
     <option value="300" selected>Medium (300px)</option>
@@ -39,7 +52,10 @@
     (function() {
       var generateBtn = document.getElementById('generateBtn');
       var statusBox = document.getElementById('statusBox');
+      var projectSelect = document.getElementById('projectSelect');
+      var projectInfo = document.getElementById('projectInfo');
       
+      var MAX_DIMENSION = 4096;
       var MAX_HEIGHT = 2500;
       
       function showStatus(msg, type) {
@@ -48,7 +64,62 @@
         statusBox.style.display = 'block';
       }
       
-      function resizeImg(blob, maxW) {
+      // Load available projects from server
+      window.loadProjects = async function() {
+        var serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+        projectSelect.innerHTML = '<option value="">Loading...</option>';
+        
+        try {
+          var res = await fetch(serverUrl + '/api/projects');
+          var projects = await res.json();
+          
+          if (projects.length === 0) {
+            projectSelect.innerHTML = '<option value="">No projects found</option>';
+            projectInfo.textContent = 'Capture a website first using the desktop app.';
+            return;
+          }
+          
+          projectSelect.innerHTML = projects.map(function(p) {
+            return '<option value="' + p.id + '">' + p.site + ' (' + p.captured_at + ')</option>';
+          }).join('');
+          
+          updateProjectInfo();
+        } catch (err) {
+          projectSelect.innerHTML = '<option value="">Error loading projects</option>';
+          projectInfo.textContent = 'Make sure the server is running.';
+        }
+      };
+      
+      function updateProjectInfo() {
+        var selected = projectSelect.options[projectSelect.selectedIndex];
+        if (selected && selected.value) {
+          projectInfo.textContent = 'Project ID: ' + selected.value;
+        } else {
+          projectInfo.textContent = '';
+        }
+      }
+      
+      projectSelect.addEventListener('change', updateProjectInfo);
+      
+      // Split image into tiles if > 4096px (like Insert Big Image plugin)
+      function computeTileDimensions(dimension) {
+        if (dimension <= MAX_DIMENSION) return [dimension];
+        
+        var pieces = 1;
+        var currentDim;
+        do {
+          pieces++;
+          currentDim = Math.floor(dimension / pieces);
+        } while (currentDim >= MAX_DIMENSION);
+        
+        var remainder = dimension % currentDim;
+        var result = Array(pieces - 1).fill(currentDim);
+        result.push(currentDim + remainder);
+        return result;
+      }
+      
+      // Split large image into tiles
+      async function splitImage(blob, maxW) {
         return new Promise(function(resolve) {
           var img = new Image();
           img.onload = function() {
@@ -61,22 +132,73 @@
               h = MAX_HEIGHT;
             }
             
-            var c = document.createElement('canvas');
-            c.width = w;
-            c.height = h;
+            // Check if we need to tile
+            var widths = computeTileDimensions(w);
+            var heights = computeTileDimensions(h);
             
-            var srcH = h / scale;
-            c.getContext('2d').drawImage(img, 0, 0, img.width, srcH, 0, 0, w, h);
+            var tiles = [];
+            var yOffset = 0;
             
-            // Use JPEG for large images (much smaller file size)
-            var format = maxW >= 500 ? 'image/jpeg' : 'image/png';
-            var quality = maxW >= 500 ? 0.85 : undefined;
+            for (var hi = 0; hi < heights.length; hi++) {
+              var tileH = heights[hi];
+              var xOffset = 0;
+              
+              for (var wi = 0; wi < widths.length; wi++) {
+                var tileW = widths[wi];
+                
+                var canvas = document.createElement('canvas');
+                canvas.width = tileW;
+                canvas.height = tileH;
+                var ctx = canvas.getContext('2d');
+                
+                // Calculate source region
+                var srcX = (xOffset / scale);
+                var srcY = (yOffset / scale);
+                var srcW = (tileW / scale);
+                var srcH = (tileH / scale);
+                
+                ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, tileW, tileH);
+                
+                tiles.push({
+                  canvas: canvas,
+                  x: xOffset,
+                  y: yOffset,
+                  width: tileW,
+                  height: tileH
+                });
+                
+                xOffset += tileW;
+              }
+              yOffset += tileH;
+            }
             
-            c.toBlob(function(b) {
-              b.arrayBuffer().then(function(buf) {
-                resolve({ bytes: Array.from(new Uint8Array(buf)), width: w, height: h });
+            // Convert tiles to bytes
+            var promises = tiles.map(function(tile) {
+              return new Promise(function(res) {
+                var format = maxW >= 500 ? 'image/jpeg' : 'image/png';
+                var quality = maxW >= 500 ? 0.85 : undefined;
+                
+                tile.canvas.toBlob(function(b) {
+                  b.arrayBuffer().then(function(buf) {
+                    res({
+                      bytes: Array.from(new Uint8Array(buf)),
+                      x: tile.x,
+                      y: tile.y,
+                      width: tile.width,
+                      height: tile.height
+                    });
+                  });
+                }, format, quality);
               });
-            }, format, quality);
+            });
+            
+            Promise.all(promises).then(function(results) {
+              resolve({
+                tiles: results,
+                totalWidth: w,
+                totalHeight: h
+              });
+            });
           };
           img.src = URL.createObjectURL(blob);
         });
@@ -84,21 +206,19 @@
       
       generateBtn.addEventListener('click', async function() {
         var serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+        var projectId = projectSelect.value;
         var thumbW = parseInt(document.getElementById('imageSize').value, 10);
         
+        if (!projectId) {
+          showStatus('Please select a project', 'error');
+          return;
+        }
+        
         generateBtn.disabled = true;
-        showStatus('Connecting...', 'loading');
+        showStatus('Fetching sitemap...', 'loading');
         
         try {
-          var statusRes = await fetch(serverUrl + '/api/status');
-          var srvStatus = await statusRes.json();
-          
-          if (srvStatus.status !== 'done') {
-            throw new Error('Capture not done. Status: ' + srvStatus.status);
-          }
-          
-          showStatus('Fetching sitemap...', 'loading');
-          var mapRes = await fetch(serverUrl + '/sitemap.json');
+          var mapRes = await fetch(serverUrl + '/api/projects/' + projectId + '/sitemap.json');
           if (!mapRes.ok) throw new Error('No sitemap.json');
           var sitemap = await mapRes.json();
           
@@ -115,13 +235,13 @@
             var mobData = null;
             
             try {
-              var dRes = await fetch(serverUrl + '/' + deskFile);
-              if (dRes.ok) deskData = await resizeImg(await dRes.blob(), thumbW);
+              var dRes = await fetch(serverUrl + '/api/projects/' + projectId + '/' + deskFile);
+              if (dRes.ok) deskData = await splitImage(await dRes.blob(), thumbW);
             } catch (e) {}
             
             try {
-              var mRes = await fetch(serverUrl + '/' + mobFile);
-              if (mRes.ok) mobData = await resizeImg(await mRes.blob(), Math.round(thumbW * 0.3));
+              var mRes = await fetch(serverUrl + '/api/projects/' + projectId + '/' + mobFile);
+              if (mRes.ok) mobData = await splitImage(await mRes.blob(), Math.round(thumbW * 0.3));
             } catch (e) {}
             
             if (deskData || mobData) {
@@ -131,12 +251,12 @@
                 path: pg.path,
                 parent: pg.parent,
                 depth: pg.depth,
-                desktopImage: deskData ? deskData.bytes : null,
-                desktopWidth: deskData ? deskData.width : 0,
-                desktopHeight: deskData ? deskData.height : 0,
-                mobileImage: mobData ? mobData.bytes : null,
-                mobileWidth: mobData ? mobData.width : 0,
-                mobileHeight: mobData ? mobData.height : 0
+                desktopTiles: deskData ? deskData.tiles : null,
+                desktopWidth: deskData ? deskData.totalWidth : 0,
+                desktopHeight: deskData ? deskData.totalHeight : 0,
+                mobileTiles: mobData ? mobData.tiles : null,
+                mobileWidth: mobData ? mobData.totalWidth : 0,
+                mobileHeight: mobData ? mobData.totalHeight : 0
               });
             }
             showStatus('Loaded ' + pages.length + '/' + sitemap.pages.length, 'loading');
@@ -164,6 +284,9 @@
           generateBtn.disabled = false;
         }
       };
+      
+      // Load projects on init
+      setTimeout(loadProjects, 100);
     })();
   </script>
 </body>
