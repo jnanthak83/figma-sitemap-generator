@@ -1,56 +1,64 @@
-# Figma Sitemap Generator
+# Sitemap Generator
 
-Automatically generate visual sitemaps in Figma from full-page screenshots.
+Generate visual sitemaps in Figma from full-page website screenshots.
 
-## Features
-
-- 🌐 **Auto-crawl** — Discovers pages from navigation links
-- 📸 **Full-page capture** — Desktop + mobile viewports
-- 🎨 **Quality options** — From fast preview to print-ready
-- 🌳 **Tree layout** — Hierarchical sitemap with connectors
-- 🔗 **Real-time** — Progress tracking and live preview
+![Screenshot](https://via.placeholder.com/800x400?text=Sitemap+Generator)
 
 ## Quick Start
 
-### 1. Install
+### 1. Install & Run Desktop App
 
 ```bash
-cd figma-sitemap-plugin
+git clone https://github.com/jnanthak83/figma-sitemap-generator.git
+cd figma-sitemap-generator
 npm install
 npx playwright install chromium
-```
-
-### 2. Run Desktop App
-
-```bash
 npm start
 ```
 
-Opens http://localhost:3000 — enter a URL and capture screenshots.
+Opens http://localhost:3000
 
-### 3. Import to Figma
+### 2. Capture a Website
 
-1. **Plugins** → **Development** → **Import plugin from manifest**
-2. Select `manifest.json`
-3. Run: **Plugins** → **Development** → **Sitemap Generator**
+1. Enter website URL
+2. Configure options (quality, max pages)
+3. Click **Start Capture**
+4. Wait for screenshots to complete
+
+### 3. Install Figma Plugin
+
+1. In Figma: **Plugins** → **Development** → **Import plugin from manifest...**
+2. Select `manifest.json` from this folder
+
+### 4. Generate Sitemap
+
+1. Open any Figma file
+2. **Plugins** → **Development** → **Sitemap Generator**
+3. Select image quality (200-800px)
 4. Click **Generate Sitemap**
 
-## How It Works
+## Features
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Desktop App │ ──► │  Screenshots │ ──► │ Figma Plugin │
-│  (localhost) │     │  + sitemap   │     │  (tree view) │
-└──────────────┘     └──────────────┘     └──────────────┘
-```
+- 🔍 **Auto-crawl** — Discovers pages from navigation links
+- 📱 **Desktop + Mobile** — Captures both viewports
+- 🎨 **Quality options** — Low to XL image sizes
+- 🌲 **Tree layout** — Hierarchical sitemap with connectors
+- ⚡ **Fast** — Parallel captures with smart timeouts
 
-1. Desktop app crawls site navigation
-2. Playwright captures full-page screenshots
-3. Figma plugin imports and arranges in tree layout
+## Options
 
-## Documentation
+| Option | Default | Description |
+|--------|---------|-------------|
+| Desktop | ✓ | Capture 1920×1080 viewport |
+| Mobile | ✓ | Capture 390×844 viewport |
+| Auto-crawl | ✓ | Discover pages from nav |
+| Quality | High | low/medium/high/full |
+| Max Pages | 50 | Limit discovered pages |
 
-See [SPEC.md](SPEC.md) for detailed architecture, API, and roadmap.
+## Requirements
+
+- Node.js 18+
+- Figma Desktop App
 
 ## License
 

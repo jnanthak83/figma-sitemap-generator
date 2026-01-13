@@ -3,220 +3,168 @@
 <head>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: Inter, -apple-system, sans-serif;
-      font-size: 12px;
-      padding: 16px;
-      background: #fff;
-    }
+    body { font-family: Inter, sans-serif; font-size: 12px; padding: 16px; background: #fff; }
     h2 { font-size: 14px; margin-bottom: 12px; }
     label { display: block; margin-bottom: 4px; color: #333; }
-    input, select {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      margin-bottom: 12px;
-      font-size: 12px;
-    }
-    button {
-      width: 100%;
-      padding: 10px;
-      background: #18A0FB;
-      color: white;
-      border: none;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-    }
+    input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; }
+    button { width: 100%; padding: 10px; background: #18A0FB; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     button:hover { background: #0d8de8; }
     button:disabled { background: #ccc; cursor: not-allowed; }
-    .status {
-      margin-top: 12px;
-      padding: 8px;
-      border-radius: 4px;
-      font-size: 11px;
-    }
-    .status.loading { background: #fff3cd; color: #856404; }
-    .status.success { background: #d4edda; color: #155724; }
-    .status.error { background: #f8d7da; color: #721c24; }
-    .info {
-      background: #e7f3ff;
-      padding: 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      margin-bottom: 12px;
-      color: #0066cc;
-    }
+    #statusBox { margin-top: 12px; padding: 8px; border-radius: 4px; font-size: 11px; display: none; }
+    .loading { background: #fff3cd; color: #856404; }
+    .success { background: #d4edda; color: #155724; }
+    .error { background: #f8d7da; color: #721c24; }
+    .info { background: #e7f3ff; padding: 8px; border-radius: 4px; font-size: 11px; margin-bottom: 12px; color: #0066cc; }
   </style>
 </head>
 <body>
-  <h2>📸 Sitemap Generator</h2>
-  
-  <div class="info">
-    Make sure the desktop app is running at localhost:3000
-  </div>
+  <h2>Sitemap Generator</h2>
+  <div class="info">Make sure the desktop app is running at localhost:3000</div>
   
   <label>Server URL</label>
-  <input type="text" id="serverUrl" value="http://localhost:3000" />
+  <input type="text" id="serverUrl" value="http://localhost:3000">
   
-  <label>Image Quality in Figma</label>
+  <label>Image Quality</label>
   <select id="imageSize">
-    <option value="200">Small (200px) - Fast</option>
+    <option value="200">Small (200px)</option>
     <option value="300" selected>Medium (300px)</option>
     <option value="500">Large (500px)</option>
-    <option value="800">XL (800px) - High Quality</option>
+    <option value="800">XL (800px)</option>
   </select>
   
-  <button id="generate">Generate Sitemap</button>
-  
-  <div id="status" class="status" style="display: none;"></div>
+  <button id="generateBtn">Generate Sitemap</button>
+  <div id="statusBox"></div>
 
   <script>
-    const btn = document.getElementById('generate');
-    const status = document.getElementById('status');
-    
-    function setStatus(msg, type) {
-      status.style.display = 'block';
-      status.className = 'status ' + type;
-      status.textContent = msg;
-    }
-    
-    // Resize image using canvas
-    async function resizeImage(blob, maxWidth) {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => {
-          const scale = maxWidth / img.width;
-          const newWidth = maxWidth;
-          const newHeight = Math.round(img.height * scale);
-          
-          const canvas = document.createElement('canvas');
-          canvas.width = newWidth;
-          canvas.height = newHeight;
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, newWidth, newHeight);
-          
-          canvas.toBlob((resizedBlob) => {
-            resizedBlob.arrayBuffer().then((buffer) => {
-              resolve({
-                bytes: Array.from(new Uint8Array(buffer)),
-                width: newWidth,
-                height: newHeight
+    (function() {
+      var generateBtn = document.getElementById('generateBtn');
+      var statusBox = document.getElementById('statusBox');
+      
+      var MAX_HEIGHT = 2500;
+      
+      function showStatus(msg, type) {
+        statusBox.textContent = msg;
+        statusBox.className = type;
+        statusBox.style.display = 'block';
+      }
+      
+      function resizeImg(blob, maxW) {
+        return new Promise(function(resolve) {
+          var img = new Image();
+          img.onload = function() {
+            var scale = maxW / img.width;
+            var w = maxW;
+            var h = Math.round(img.height * scale);
+            
+            // Cap height
+            if (h > MAX_HEIGHT) {
+              h = MAX_HEIGHT;
+            }
+            
+            var c = document.createElement('canvas');
+            c.width = w;
+            c.height = h;
+            
+            var srcH = h / scale;
+            c.getContext('2d').drawImage(img, 0, 0, img.width, srcH, 0, 0, w, h);
+            
+            // Use JPEG for large images (much smaller file size)
+            var format = maxW >= 500 ? 'image/jpeg' : 'image/png';
+            var quality = maxW >= 500 ? 0.85 : undefined;
+            
+            c.toBlob(function(b) {
+              b.arrayBuffer().then(function(buf) {
+                resolve({ bytes: Array.from(new Uint8Array(buf)), width: w, height: h });
               });
-            });
-          }, 'image/png');
-        };
-        img.src = URL.createObjectURL(blob);
+            }, format, quality);
+          };
+          img.src = URL.createObjectURL(blob);
+        });
+      }
+      
+      generateBtn.addEventListener('click', async function() {
+        var serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+        var thumbW = parseInt(document.getElementById('imageSize').value, 10);
+        
+        generateBtn.disabled = true;
+        showStatus('Connecting...', 'loading');
+        
+        try {
+          var statusRes = await fetch(serverUrl + '/api/status');
+          var srvStatus = await statusRes.json();
+          
+          if (srvStatus.status !== 'done') {
+            throw new Error('Capture not done. Status: ' + srvStatus.status);
+          }
+          
+          showStatus('Fetching sitemap...', 'loading');
+          var mapRes = await fetch(serverUrl + '/sitemap.json');
+          if (!mapRes.ok) throw new Error('No sitemap.json');
+          var sitemap = await mapRes.json();
+          
+          showStatus('Loading images...', 'loading');
+          var pages = [];
+          var siteSlug = sitemap.site.split('.')[0];
+          
+          for (var i = 0; i < sitemap.pages.length; i++) {
+            var pg = sitemap.pages[i];
+            var deskFile = pg.desktopFile || (siteSlug + '_' + pg.slug + '_desktop.png');
+            var mobFile = pg.mobileFile || (siteSlug + '_' + pg.slug + '_mobile.png');
+            
+            var deskData = null;
+            var mobData = null;
+            
+            try {
+              var dRes = await fetch(serverUrl + '/' + deskFile);
+              if (dRes.ok) deskData = await resizeImg(await dRes.blob(), thumbW);
+            } catch (e) {}
+            
+            try {
+              var mRes = await fetch(serverUrl + '/' + mobFile);
+              if (mRes.ok) mobData = await resizeImg(await mRes.blob(), Math.round(thumbW * 0.3));
+            } catch (e) {}
+            
+            if (deskData || mobData) {
+              pages.push({
+                slug: pg.slug,
+                title: pg.title,
+                path: pg.path,
+                parent: pg.parent,
+                depth: pg.depth,
+                desktopImage: deskData ? deskData.bytes : null,
+                desktopWidth: deskData ? deskData.width : 0,
+                desktopHeight: deskData ? deskData.height : 0,
+                mobileImage: mobData ? mobData.bytes : null,
+                mobileWidth: mobData ? mobData.width : 0,
+                mobileHeight: mobData ? mobData.height : 0
+              });
+            }
+            showStatus('Loaded ' + pages.length + '/' + sitemap.pages.length, 'loading');
+          }
+          
+          if (pages.length === 0) throw new Error('No images found');
+          
+          showStatus('Creating layout...', 'loading');
+          parent.postMessage({ pluginMessage: { type: 'create-sitemap', site: sitemap.site, pages: pages } }, '*');
+          
+        } catch (err) {
+          showStatus('Error: ' + err.message, 'error');
+          generateBtn.disabled = false;
+        }
       });
-    }
-    
-    btn.onclick = async () => {
-      const serverUrl = document.getElementById('serverUrl').value.replace(/\\/$/, '');
-      const thumbWidth = parseInt(document.getElementById('imageSize').value);
       
-      btn.disabled = true;
-      setStatus('Connecting to server...', 'loading');
-      
-      try {
-        // Check server status first
-        const statusRes = await fetch(serverUrl + '/api/status');
-        const serverStatus = await statusRes.json();
-        
-        if (serverStatus.status !== 'done') {
-          throw new Error('Capture not complete. Status: ' + serverStatus.status);
+      window.onmessage = function(e) {
+        var msg = e.data.pluginMessage;
+        if (!msg) return;
+        if (msg.type === 'done') {
+          showStatus('Done! ' + msg.count + ' pages', 'success');
+          generateBtn.disabled = false;
+        } else if (msg.type === 'error') {
+          showStatus('Error: ' + msg.message, 'error');
+          generateBtn.disabled = false;
         }
-        
-        // Fetch sitemap.json
-        setStatus('Fetching sitemap...', 'loading');
-        const sitemapRes = await fetch(serverUrl + '/sitemap.json');
-        if (!sitemapRes.ok) throw new Error('Could not fetch sitemap.json');
-        const sitemap = await sitemapRes.json();
-        
-        setStatus('Loading ' + sitemap.pages.length + ' pages...', 'loading');
-        
-        // Fetch and resize all images
-        const pages = [];
-        for (const page of sitemap.pages) {
-          // Get filenames from page data or construct them
-          const siteSlug = sitemap.site.split('.')[0];
-          const desktopFile = page.desktopFile || siteSlug + '_' + page.slug + '_desktop.png';
-          const mobileFile = page.mobileFile || siteSlug + '_' + page.slug + '_mobile.png';
-          
-          const desktopUrl = serverUrl + '/' + desktopFile;
-          const mobileUrl = serverUrl + '/' + mobileFile;
-          
-          let desktopData = null;
-          let mobileData = null;
-          
-          try {
-            const desktopRes = await fetch(desktopUrl);
-            if (desktopRes.ok) {
-              const desktopBlob = await desktopRes.blob();
-              desktopData = await resizeImage(desktopBlob, thumbWidth);
-            }
-          } catch (e) {
-            console.warn('No desktop image for ' + page.slug);
-          }
-          
-          try {
-            const mobileRes = await fetch(mobileUrl);
-            if (mobileRes.ok) {
-              const mobileBlob = await mobileRes.blob();
-              mobileData = await resizeImage(mobileBlob, Math.round(thumbWidth * 0.3));
-            }
-          } catch (e) {
-            console.warn('No mobile image for ' + page.slug);
-          }
-          
-          if (desktopData || mobileData) {
-            pages.push({
-              ...page,
-              desktopImage: desktopData?.bytes,
-              desktopWidth: desktopData?.width,
-              desktopHeight: desktopData?.height,
-              mobileImage: mobileData?.bytes,
-              mobileWidth: mobileData?.width,
-              mobileHeight: mobileData?.height
-            });
-          }
-          
-          setStatus('Loaded ' + pages.length + '/' + sitemap.pages.length + ' pages...', 'loading');
-        }
-        
-        if (pages.length === 0) {
-          throw new Error('No screenshots found. Run capture first.');
-        }
-        
-        setStatus('Creating Figma layout...', 'loading');
-        
-        // Send to plugin
-        parent.postMessage({
-          pluginMessage: {
-            type: 'create-sitemap',
-            site: sitemap.site,
-            pages: pages
-          }
-        }, '*');
-        
-      } catch (err) {
-        setStatus('Error: ' + err.message, 'error');
-        btn.disabled = false;
-      }
-    };
-    
-    // Listen for completion
-    window.onmessage = (e) => {
-      const msg = e.data.pluginMessage;
-      if (msg.type === 'done') {
-        setStatus('✓ Created sitemap with ' + msg.count + ' pages', 'success');
-        btn.disabled = false;
-      } else if (msg.type === 'error') {
-        setStatus('Error: ' + msg.message, 'error');
-        btn.disabled = false;
-      }
-    };
+      };
+    })();
   </script>
 </body>
 </html>
