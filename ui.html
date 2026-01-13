@@ -11,7 +11,7 @@
     }
     h2 { font-size: 14px; margin-bottom: 12px; }
     label { display: block; margin-bottom: 4px; color: #333; }
-    input {
+    input, select {
       width: 100%;
       padding: 8px;
       border: 1px solid #ddd;
@@ -41,16 +41,33 @@
     .status.loading { background: #fff3cd; color: #856404; }
     .status.success { background: #d4edda; color: #155724; }
     .status.error { background: #f8d7da; color: #721c24; }
+    .info {
+      background: #e7f3ff;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin-bottom: 12px;
+      color: #0066cc;
+    }
   </style>
 </head>
 <body>
   <h2>📸 Sitemap Generator</h2>
   
+  <div class="info">
+    Make sure the desktop app is running at localhost:3000
+  </div>
+  
   <label>Server URL</label>
   <input type="text" id="serverUrl" value="http://localhost:3000" />
   
-  <label>Thumbnail Width (px)</label>
-  <input type="number" id="thumbWidth" value="300" step="50" min="100" max="800" />
+  <label>Image Quality in Figma</label>
+  <select id="imageSize">
+    <option value="200">Small (200px) - Fast</option>
+    <option value="300" selected>Medium (300px)</option>
+    <option value="500">Large (500px)</option>
+    <option value="800">XL (800px) - High Quality</option>
+  </select>
   
   <button id="generate">Generate Sitemap</button>
   
@@ -66,24 +83,21 @@
       status.textContent = msg;
     }
     
-    // Resize image using canvas, return as Uint8Array
+    // Resize image using canvas
     async function resizeImage(blob, maxWidth) {
       return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
-          // Calculate new dimensions
           const scale = maxWidth / img.width;
           const newWidth = maxWidth;
           const newHeight = Math.round(img.height * scale);
           
-          // Draw to canvas
           const canvas = document.createElement('canvas');
           canvas.width = newWidth;
           canvas.height = newHeight;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, newWidth, newHeight);
           
-          // Convert to blob then Uint8Array
           canvas.toBlob((resizedBlob) => {
             resizedBlob.arrayBuffer().then((buffer) => {
               resolve({
@@ -99,60 +113,80 @@
     }
     
     btn.onclick = async () => {
-      const serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
-      const thumbWidth = parseInt(document.getElementById('thumbWidth').value);
+      const serverUrl = document.getElementById('serverUrl').value.replace(/\\/$/, '');
+      const thumbWidth = parseInt(document.getElementById('imageSize').value);
       
       btn.disabled = true;
-      setStatus('Fetching sitemap...', 'loading');
+      setStatus('Connecting to server...', 'loading');
       
       try {
+        // Check server status first
+        const statusRes = await fetch(serverUrl + '/api/status');
+        const serverStatus = await statusRes.json();
+        
+        if (serverStatus.status !== 'done') {
+          throw new Error('Capture not complete. Status: ' + serverStatus.status);
+        }
+        
         // Fetch sitemap.json
-        const sitemapRes = await fetch(`${serverUrl}/sitemap.json`);
+        setStatus('Fetching sitemap...', 'loading');
+        const sitemapRes = await fetch(serverUrl + '/sitemap.json');
         if (!sitemapRes.ok) throw new Error('Could not fetch sitemap.json');
         const sitemap = await sitemapRes.json();
         
-        setStatus(`Loading ${sitemap.pages.length * 2} screenshots...`, 'loading');
+        setStatus('Loading ' + sitemap.pages.length + ' pages...', 'loading');
         
         // Fetch and resize all images
         const pages = [];
         for (const page of sitemap.pages) {
-          const desktopUrl = `${serverUrl}/regent_${page.slug}_desktop.png`;
-          const mobileUrl = `${serverUrl}/regent_${page.slug}_mobile.png`;
+          // Get filenames from page data or construct them
+          const siteSlug = sitemap.site.split('.')[0];
+          const desktopFile = page.desktopFile || siteSlug + '_' + page.slug + '_desktop.png';
+          const mobileFile = page.mobileFile || siteSlug + '_' + page.slug + '_mobile.png';
           
-          const [desktopRes, mobileRes] = await Promise.all([
-            fetch(desktopUrl),
-            fetch(mobileUrl)
-          ]);
+          const desktopUrl = serverUrl + '/' + desktopFile;
+          const mobileUrl = serverUrl + '/' + mobileFile;
           
-          if (!desktopRes.ok || !mobileRes.ok) {
-            console.warn(`Missing images for ${page.slug}`);
-            continue;
+          let desktopData = null;
+          let mobileData = null;
+          
+          try {
+            const desktopRes = await fetch(desktopUrl);
+            if (desktopRes.ok) {
+              const desktopBlob = await desktopRes.blob();
+              desktopData = await resizeImage(desktopBlob, thumbWidth);
+            }
+          } catch (e) {
+            console.warn('No desktop image for ' + page.slug);
           }
           
-          const [desktopBlob, mobileBlob] = await Promise.all([
-            desktopRes.blob(),
-            mobileRes.blob()
-          ]);
+          try {
+            const mobileRes = await fetch(mobileUrl);
+            if (mobileRes.ok) {
+              const mobileBlob = await mobileRes.blob();
+              mobileData = await resizeImage(mobileBlob, Math.round(thumbWidth * 0.3));
+            }
+          } catch (e) {
+            console.warn('No mobile image for ' + page.slug);
+          }
           
-          setStatus(`Resizing ${page.slug}...`, 'loading');
+          if (desktopData || mobileData) {
+            pages.push({
+              ...page,
+              desktopImage: desktopData?.bytes,
+              desktopWidth: desktopData?.width,
+              desktopHeight: desktopData?.height,
+              mobileImage: mobileData?.bytes,
+              mobileWidth: mobileData?.width,
+              mobileHeight: mobileData?.height
+            });
+          }
           
-          // Resize images (mobile gets smaller width)
-          const [desktopData, mobileData] = await Promise.all([
-            resizeImage(desktopBlob, thumbWidth),
-            resizeImage(mobileBlob, Math.round(thumbWidth * 0.3))
-          ]);
-          
-          pages.push({
-            ...page,
-            desktopImage: desktopData.bytes,
-            desktopWidth: desktopData.width,
-            desktopHeight: desktopData.height,
-            mobileImage: mobileData.bytes,
-            mobileWidth: mobileData.width,
-            mobileHeight: mobileData.height
-          });
-          
-          setStatus(`Loaded ${pages.length}/${sitemap.pages.length} pages...`, 'loading');
+          setStatus('Loaded ' + pages.length + '/' + sitemap.pages.length + ' pages...', 'loading');
+        }
+        
+        if (pages.length === 0) {
+          throw new Error('No screenshots found. Run capture first.');
         }
         
         setStatus('Creating Figma layout...', 'loading');
@@ -176,7 +210,7 @@
     window.onmessage = (e) => {
       const msg = e.data.pluginMessage;
       if (msg.type === 'done') {
-        setStatus(`✓ Created sitemap with ${msg.count} pages`, 'success');
+        setStatus('✓ Created sitemap with ' + msg.count + ' pages', 'success');
         btn.disabled = false;
       } else if (msg.type === 'error') {
         setStatus('Error: ' + msg.message, 'error');

@@ -1,0 +1,16 @@
+{
+  "name": "sitemap-capture-server",
+  "version": "1.0.0",
+  "description": "Desktop app to capture full-page screenshots for sitemap generation",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js --open"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "playwright": "^1.40.0",
+    "cors": "^2.8.5",
+    "open": "^9.1.0"
+  }
+}

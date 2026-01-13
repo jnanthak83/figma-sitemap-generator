@@ -2,51 +2,55 @@
 
 Automatically generate visual sitemaps in Figma from full-page screenshots.
 
-![Sitemap Example](screenshots/example.png)
-
 ## Features
 
-- 📸 Full-page screenshot capture (desktop + mobile)
-- 🌳 Hierarchical tree layout
-- 🔗 Auto-generated connector lines
-- 📱 Side-by-side desktop/mobile views
-- 🏷️ Page titles and URL labels
+- 🌐 **Auto-crawl** — Discovers pages from navigation links
+- 📸 **Full-page capture** — Desktop + mobile viewports
+- 🎨 **Quality options** — From fast preview to print-ready
+- 🌳 **Tree layout** — Hierarchical sitemap with connectors
+- 🔗 **Real-time** — Progress tracking and live preview
 
 ## Quick Start
 
-### 1. Install dependencies
+### 1. Install
 
 ```bash
-# Python (for screenshot capture)
-pip3 install playwright
-playwright install chromium
+cd figma-sitemap-plugin
+npm install
+npx playwright install chromium
 ```
 
-### 2. Capture screenshots
+### 2. Run Desktop App
 
 ```bash
-# Create sitemap.json first (see SPEC.md for format)
-# Then run:
-python capture.py https://yoursite.com ./screenshots
+npm start
 ```
 
-### 3. Start the local server
+Opens http://localhost:3000 — enter a URL and capture screenshots.
 
-```bash
-node server.js ./screenshots
+### 3. Import to Figma
+
+1. **Plugins** → **Development** → **Import plugin from manifest**
+2. Select `manifest.json`
+3. Run: **Plugins** → **Development** → **Sitemap Generator**
+4. Click **Generate Sitemap**
+
+## How It Works
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Desktop App │ ──► │  Screenshots │ ──► │ Figma Plugin │
+│  (localhost) │     │  + sitemap   │     │  (tree view) │
+└──────────────┘     └──────────────┘     └──────────────┘
 ```
 
-### 4. Run the Figma plugin
-
-1. Open Figma Desktop
-2. **Plugins** → **Development** → **Import plugin from manifest...**
-3. Select `manifest.json` from this folder
-4. **Plugins** → **Development** → **Sitemap Generator**
-5. Click **Generate Sitemap**
+1. Desktop app crawls site navigation
+2. Playwright captures full-page screenshots
+3. Figma plugin imports and arranges in tree layout
 
 ## Documentation
 
-See [SPEC.md](SPEC.md) for detailed architecture, configuration, and roadmap.
+See [SPEC.md](SPEC.md) for detailed architecture, API, and roadmap.
 
 ## License
 
