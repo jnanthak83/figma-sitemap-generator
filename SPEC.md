@@ -2,216 +2,214 @@
 
 ## Overview
 
-A two-part system for generating visual sitemaps in Figma from full-page website screenshots:
-
-1. **Desktop App** (Node.js) — Crawls sites and captures screenshots
-2. **Figma Plugin** — Imports screenshots and creates visual sitemap layout
+A two-part system for generating visual sitemaps in Figma from automated website screenshots:
+1. **Capture Server** - Node.js/Express app with Playwright for full-page screenshots
+2. **Figma Plugin** - Imports screenshots and creates hierarchical sitemap layout
 
 ## Architecture
 
 ```
-┌─────────────────────┐      ┌─────────────────────┐
-│   Desktop App       │      │   Figma Plugin      │
-│   localhost:3000    │◄────►│   ui.html + code.js │
-├─────────────────────┤      ├─────────────────────┤
-│ • Web UI            │      │ • Fetches sitemap   │
-│ • Auto-crawl nav    │      │ • Resizes images    │
-│ • Playwright capture│      │ • Tree layout       │
-│ • Serve screenshots │      │ • Connector lines   │
-└─────────────────────┘      └─────────────────────┘
+┌─────────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│   Web UI (Browser)  │────▶│  Capture Server  │────▶│  Target Website │
+│   localhost:3000    │     │  Express + API   │     │                 │
+└─────────────────────┘     └──────────────────┘     └─────────────────┘
+         │                           │
+         │                           ▼
+         │                  ┌──────────────────┐
+         │                  │  captures/       │
+         │                  │  {project}/      │
+         │                  │  - sitemap.json  │
+         │                  │  - *.png files   │
+         │                  └──────────────────┘
+         │                           │
+         ▼                           │
+┌─────────────────────┐              │
+│   Figma Plugin      │◀─────────────┘
+│   (ui.html + code)  │   Fetches images via API
+└─────────────────────┘
+         │
+         ▼
+┌─────────────────────┐
+│   Figma Canvas      │
+│   Visual Sitemap    │
+└─────────────────────┘
 ```
 
-## Desktop App (app.js)
+## Components
 
-### Features
-- Web UI for URL input and configuration
-- Auto-discovers pages by crawling navigation links
-- Captures full-page screenshots (desktop + mobile)
-- Configurable quality settings
-- Real-time progress tracking
-- Serves sitemap.json and images for Figma plugin
+### 1. Capture Server (`app.js`)
 
-### API Endpoints
+**Port:** 3000
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Web UI |
-| `/api/status` | GET | Current capture session status |
-| `/api/capture` | POST | Start new capture |
-| `/sitemap.json` | GET | Sitemap data for Figma |
-| `/:filename` | GET | Serve screenshot files |
+**Endpoints:**
 
-### Capture Options
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Web UI for capture management |
+| GET | `/api/status` | Current capture session status |
+| GET | `/api/projects` | List all saved projects |
+| GET | `/api/projects/:id/sitemap.json` | Get project sitemap |
+| GET | `/api/projects/:id/:filename` | Get captured image |
+| GET | `/captures/:id/` | Directory listing with previews |
+| DELETE | `/api/projects/:id` | Delete a project |
+| POST | `/api/discover` | Crawl site navigation (no capture) |
+| POST | `/api/capture` | Start capture (uses discovered pages) |
 
-```javascript
-{
-  crawl: true,          // Auto-discover pages from navigation
-  desktop: true,        // Capture desktop viewport
-  mobile: true,         // Capture mobile viewport
-  desktopWidth: 1920,   // Desktop viewport width
-  desktopHeight: 1080,  // Desktop viewport height
-  mobileWidth: 390,     // Mobile viewport width
-  mobileHeight: 844,    // Mobile viewport height
-  quality: 'high',      // low (0.5x), medium (1x), high (1.5x), full (2x)
-  maxPages: 50          // Maximum pages to capture
-}
+**Capture Configuration:**
+- Desktop viewport: 1920×1080 @ 2x scale = 3840px output
+- Mobile viewport: 390×844 @ 2x scale = 780px output
+- Wait strategy: `domcontentloaded` + 15s timeout
+- Warm-up scroll for lazy-loaded content
+- PNG format for maximum quality
+
+**Project Structure:**
+```
+captures/
+└── {hostname}_{date}_{timestamp}/
+    ├── sitemap.json
+    ├── {site}_{slug}_desktop.png
+    └── {site}_{slug}_mobile.png
 ```
 
-### Screenshot Capture
-- Uses Playwright with `domcontentloaded` wait (faster, more reliable)
-- 15-second timeout per page
-- Non-blocking errors (skips failed pages)
-- Separate browser contexts for desktop/mobile
-- Scale factor controls image quality
-
-### Navigation Crawling
-Discovers links from these selectors:
-- `nav a[href]`
-- `header a[href]`
-- `[role="navigation"] a[href]`
-- `.nav a[href]`, `.menu a[href]`, `.navigation a[href]`
-
-### Sitemap Structure
-```javascript
+**sitemap.json Schema:**
+```json
 {
-  site: "example.com",
-  captured_at: "2024-01-15",
-  pages: [
+  "site": "example.com",
+  "captured_at": "2025-01-14",
+  "captured_at_time": "14:32",
+  "pages": [
     {
-      slug: "home",
-      title: "Home",
-      path: "/",
-      parent: null,
-      depth: 0,
-      desktopFile: "example_home_desktop.png",
-      mobileFile: "example_home_mobile.png"
+      "slug": "home",
+      "title": "Home",
+      "path": "/",
+      "parent": null,
+      "depth": 0,
+      "desktopFile": "example_home_desktop.png",
+      "mobileFile": "example_home_mobile.png"
     }
   ]
 }
 ```
 
-## Figma Plugin
+### 2. Figma Plugin
 
-### Files
-- `manifest.json` — Plugin configuration
-- `code.js` — Figma API logic (layout, connectors)
-- `ui.html` — Plugin UI (fetch, resize, send to Figma)
+**Files:**
+- `manifest.json` - Plugin metadata
+- `code.js` - Figma API logic (runs in Figma sandbox)
+- `ui.html` - Plugin UI (runs in iframe)
 
-### Image Processing
-- Client-side resizing using canvas API
-- Max height cap: 2500px (Figma limit)
-- JPEG compression (0.85) for 500px+ sizes
-- PNG for smaller sizes
+**Message Protocol (UI ↔ Plugin):**
 
-### Quality Options
-| Setting | Desktop Width | Mobile Width |
-|---------|---------------|--------------|
-| Small | 200px | 60px |
-| Medium | 300px | 90px |
-| Large | 500px | 150px |
-| XL | 800px | 240px |
+| Message | Direction | Purpose |
+|---------|-----------|---------|
+| `start` | UI → Plugin | Initialize sitemap frame |
+| `ready` | Plugin → UI | Frame ready, request pages |
+| `start-page` | UI → Plugin | Begin new page card |
+| `page-ready` | Plugin → UI | Card created, request tiles |
+| `add-tile` | UI → Plugin | Add single image tile |
+| `tile-added` | Plugin → UI | Tile added, request next |
+| `finish-page` | UI → Plugin | Assemble tiles into card |
+| `page-done` | Plugin → UI | Card complete, next page |
+| `finalize` | UI → Plugin | Reposition cards, add connectors |
+| `done` | Plugin → UI | Complete |
+| `error` | Plugin → UI | Error occurred |
 
-### Layout Algorithm
-1. Group pages by depth level
-2. Within each level, group by parent
-3. Center children horizontally under parent
-4. Fixed spacing: 80px horizontal, 300px vertical
+**Tile-by-Tile Loading:**
+- Max tile size: 1000×1000px
+- Images split into grid of tiles
+- Each tile sent as separate message
+- Tiles assembled into groups in Figma
 
-### Layout Constants
+**Layout Constants:**
 ```javascript
 CARD_GAP = 80        // Horizontal gap between cards
 LEVEL_GAP = 300      // Vertical gap between depth levels
-CARD_PADDING = 24    // Padding inside cards
-SCREENSHOT_GAP = 16  // Gap between desktop/mobile screenshots
+CARD_PADDING = 24    // Internal card padding
+SCREENSHOT_GAP = 16  // Gap between desktop/mobile
 ```
 
-### Card Structure
-Each page card contains:
-- Title (bold, 16px)
-- URL path (gray, 12px)
-- Desktop screenshot
-- Mobile screenshot (side by side)
+## Data Flow
 
-### Connector Lines
-- 3-segment lines: vertical → horizontal → vertical
-- Connect parent card bottom-center to child card top-center
-- Gray stroke (#CCCCCC), 2px weight
+### Discovery Phase
+1. User enters URL in web UI
+2. POST `/api/discover` with `{ url, options: { maxDepth, maxPages } }`
+3. Server launches Playwright, navigates to URL
+4. Extracts links from nav/header elements
+5. Returns page list with depth/parent relationships
+6. UI displays summary by depth level
+
+### Capture Phase
+1. User clicks "Start Capture"
+2. POST `/api/capture` with viewport options
+3. Server iterates through discovered pages
+4. For each page:
+   - Warm-up scroll to trigger lazy content
+   - Desktop screenshot at 3840px width
+   - Mobile screenshot at 780px width
+5. Saves images + sitemap.json to project folder
+6. Real-time progress via `/api/status` polling
+
+### Import Phase
+1. Plugin fetches sitemap.json
+2. For each page:
+   - Fetch desktop/mobile images
+   - Split into ≤1000px tiles
+   - Send tiles one-by-one to Figma
+   - Assemble into card
+3. Reposition cards by depth (tree layout)
+4. Draw connector lines between parent/child
+
+## Configuration Options
+
+### Web UI
+| Option | Default | Description |
+|--------|---------|-------------|
+| Max Depth | 3 | Navigation crawl depth (1-5) |
+| Max Pages | 50 | Maximum pages to discover |
+| Desktop | ✓ | Capture desktop viewport |
+| Mobile | ✓ | Capture mobile viewport |
+| Scroll Delay | 150ms | Delay between scroll steps |
+
+### Figma Plugin
+| Option | Default | Description |
+|--------|---------|-------------|
+| Display Size | 500px | Thumbnail width in Figma |
+| Format | PNG | Output format (PNG/JPEG) |
+
+## Technical Constraints
+
+### Figma Limits
+- Max image dimension: ~4096px (but memory limit lower)
+- Max message size: ~10MB
+- Solution: Tile images into 1000×1000 chunks
+
+### Playwright
+- Requires Chromium browser
+- Docker: Use `mcr.microsoft.com/playwright:v1.40.0-focal`
+- Local: `npx playwright install chromium`
 
 ## File Structure
 
 ```
 figma-sitemap-plugin/
 ├── app.js              # Express server + Playwright capture
-├── package.json        # Node dependencies
-├── manifest.json       # Figma plugin manifest
 ├── code.js             # Figma plugin logic
 ├── ui.html             # Figma plugin UI
-├── captures/           # Screenshot output folder
+├── manifest.json       # Figma plugin manifest
+├── package.json        # Node dependencies
+├── Dockerfile          # Docker build
+├── docker-compose.yml  # Docker orchestration
+├── CHANGELOG.md        # Version history
 ├── SPEC.md             # This file
-└── README.md           # Quick start guide
+├── README.md           # User documentation
+└── captures/           # Screenshot output (gitignored)
 ```
-
-## Dependencies
-
-### Node.js (Desktop App)
-- `express` — Web server
-- `cors` — Cross-origin requests
-- `playwright` — Browser automation
-
-### Figma Plugin
-- No external dependencies
-- Uses Figma Plugin API
-- Canvas API for image resizing
-
-## Network Configuration
-
-The Figma plugin requires network access to localhost:
-
-```json
-{
-  "networkAccess": {
-    "allowedDomains": ["none"],
-    "devAllowedDomains": ["http://localhost:3000"]
-  }
-}
-```
-
-## Usage
-
-### 1. Start Desktop App
-```bash
-cd figma-sitemap-plugin
-npm install
-npx playwright install chromium
-npm start
-```
-
-### 2. Capture Website
-1. Open http://localhost:3000
-2. Enter website URL
-3. Configure options (quality, viewports)
-4. Click "Start Capture"
-5. Wait for completion
-
-### 3. Import to Figma
-1. Open Figma file
-2. Plugins → Development → Sitemap Generator
-3. Verify server URL (http://localhost:3000)
-4. Select image quality
-5. Click "Generate Sitemap"
-
-## Limitations
-
-- Single domain only (no external links)
-- Navigation-based discovery (won't find orphan pages)
-- No authentication support (public pages only)
-- Max image height: 2500px in Figma
 
 ## Future Enhancements
 
-- [ ] Deep crawl mode (follow all internal links)
-- [ ] Authentication support (cookies, login)
-- [ ] Browser extension mode (use existing Chrome session)
-- [ ] Diff mode (compare before/after)
-- [ ] PDF export
-- [ ] Scheduled captures
+- [ ] Authentication support for protected pages
+- [ ] Deep crawl mode (follow all links)
+- [ ] Custom CSS injection for capture
+- [ ] Browser extension mode (use existing session)
+- [ ] Export to PDF/image
+- [ ] Figma component library integration

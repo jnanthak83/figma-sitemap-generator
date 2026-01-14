@@ -16,7 +16,6 @@ app.use(express.json());
 const PORT = 3000;
 const BASE_DIR = path.join(__dirname, 'captures');
 
-// Ensure base directory exists
 if (!fs.existsSync(BASE_DIR)) {
   fs.mkdirSync(BASE_DIR, { recursive: true });
 }
@@ -27,11 +26,44 @@ let captureSession = {
   pages: [],
   status: 'idle',
   progress: 0,
+  currentPage: null,
+  currentViewport: null,
   error: null
 };
 
-// Serve static files from project folders
 app.use('/captures', express.static(BASE_DIR));
+
+// Directory listing for captures
+app.get('/captures/:projectId/', (req, res) => {
+  const projectDir = path.join(BASE_DIR, req.params.projectId);
+  if (!fs.existsSync(projectDir)) {
+    return res.status(404).send('Project not found');
+  }
+  
+  const files = fs.readdirSync(projectDir);
+  const html = `<!DOCTYPE html>
+<html><head><title>${req.params.projectId}</title>
+<style>
+  body { font-family: -apple-system, sans-serif; padding: 40px; background: #f5f5f5; }
+  h1 { font-size: 20px; margin-bottom: 20px; }
+  .files { background: white; border-radius: 8px; overflow: hidden; }
+  a { display: block; padding: 12px 16px; border-bottom: 1px solid #eee; color: #007AFF; text-decoration: none; }
+  a:hover { background: #f9f9f9; }
+  a:last-child { border-bottom: none; }
+  img { max-width: 200px; margin: 10px; border: 1px solid #ddd; }
+  .gallery { display: flex; flex-wrap: wrap; background: white; border-radius: 8px; padding: 10px; margin-top: 20px; }
+</style></head><body>
+<h1>📁 ${req.params.projectId}</h1>
+<div class="files">
+${files.map(f => '<a href="/captures/' + req.params.projectId + '/' + f + '" target="_blank">' + f + '</a>').join('')}
+</div>
+<h2 style="margin-top:30px;font-size:16px;">Preview</h2>
+<div class="gallery">
+${files.filter(f => f.endsWith('.png')).map(f => '<a href="/captures/' + req.params.projectId + '/' + f + '" target="_blank"><img src="/captures/' + req.params.projectId + '/' + f + '"></a>').join('')}
+</div>
+</body></html>`;
+  res.send(html);
+});
 
 app.get('/', (req, res) => {
   res.send(getWebUI());
@@ -41,7 +73,6 @@ app.get('/api/status', (req, res) => {
   res.json(captureSession);
 });
 
-// List all saved projects
 app.get('/api/projects', (req, res) => {
   const projects = [];
   
@@ -58,22 +89,20 @@ app.get('/api/projects', (req, res) => {
               id: folder.name,
               site: sitemap.site,
               captured_at: sitemap.captured_at,
-              pageCount: sitemap.pages.length
+              captured_at_time: sitemap.captured_at_time || '',
+              pageCount: sitemap.pages.length,
+              captureSize: sitemap.captureSize || 'unknown'
             });
-          } catch (e) {
-            // Skip invalid projects
-          }
+          } catch (e) {}
         }
       }
     }
   }
   
-  // Sort by date, newest first
   projects.sort((a, b) => new Date(b.captured_at) - new Date(a.captured_at));
   res.json(projects);
 });
 
-// Get sitemap for a specific project
 app.get('/api/projects/:projectId/sitemap.json', (req, res) => {
   const sitemapPath = path.join(BASE_DIR, req.params.projectId, 'sitemap.json');
   if (fs.existsSync(sitemapPath)) {
@@ -83,7 +112,6 @@ app.get('/api/projects/:projectId/sitemap.json', (req, res) => {
   }
 });
 
-// Serve image from a project
 app.get('/api/projects/:projectId/:filename', (req, res) => {
   const filepath = path.join(BASE_DIR, req.params.projectId, req.params.filename);
   if (fs.existsSync(filepath)) {
@@ -93,7 +121,6 @@ app.get('/api/projects/:projectId/:filename', (req, res) => {
   }
 });
 
-// Delete a project
 app.delete('/api/projects/:projectId', (req, res) => {
   const projectPath = path.join(BASE_DIR, req.params.projectId);
   if (fs.existsSync(projectPath)) {
@@ -104,7 +131,6 @@ app.delete('/api/projects/:projectId', (req, res) => {
   }
 });
 
-// Legacy endpoint for current session
 app.get('/sitemap.json', (req, res) => {
   if (!captureSession.project) {
     return res.status(404).json({ error: 'No capture session' });
@@ -117,7 +143,6 @@ app.get('/sitemap.json', (req, res) => {
   }
 });
 
-// Legacy endpoint for current session images
 app.get('/:filename', (req, res) => {
   if (!captureSession.project) {
     return res.status(404).send('No capture session');
@@ -130,7 +155,8 @@ app.get('/:filename', (req, res) => {
   }
 });
 
-app.post('/api/capture', async (req, res) => {
+// Discover pages (crawl only, no capture)
+app.post('/api/discover', async (req, res) => {
   const { url, options = {} } = req.body;
   
   if (!url) {
@@ -138,73 +164,120 @@ app.post('/api/capture', async (req, res) => {
   }
   
   const hostname = new URL(url).hostname;
+  const maxDepth = options.maxDepth || 3;
+  const maxPages = options.maxPages || 50;
+  
+  captureSession = {
+    project: null,
+    site: hostname,
+    baseUrl: new URL(url).origin,
+    pages: [],
+    status: 'crawling',
+    progress: 0,
+    error: null
+  };
+  
+  try {
+    const browser = await chromium.launch();
+    const pages = await crawlNavigation(browser, url, new URL(url).origin, maxPages, maxDepth);
+    await browser.close();
+    
+    captureSession.pages = pages;
+    captureSession.status = 'discovered';
+    
+    res.json({ success: true, pages });
+  } catch (err) {
+    captureSession.status = 'error';
+    captureSession.error = err.message;
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Start capture (after discovery)
+app.post('/api/capture', async (req, res) => {
+  const { url, options = {} } = req.body;
+  
+  // If pages already discovered, use those
+  const useDiscovered = captureSession.status === 'discovered' && captureSession.pages.length > 0;
+  
+  if (!url && !useDiscovered) {
+    return res.status(400).json({ error: 'URL required' });
+  }
+  
+  const hostname = useDiscovered ? captureSession.site : new URL(url).hostname;
+  const baseUrl = useDiscovered ? captureSession.baseUrl : new URL(url).origin;
   const timestamp = new Date().toISOString().split('T')[0];
   const projectId = `${hostname.replace(/\./g, '-')}_${timestamp}_${Date.now()}`;
   const projectDir = path.join(BASE_DIR, projectId);
   
-  // Create project directory
   fs.mkdirSync(projectDir, { recursive: true });
   
+  const captureSize = options.captureSize || 500;
+  
   const config = {
-    crawl: options.crawl !== false,
     desktop: options.desktop !== false,
     mobile: options.mobile !== false,
-    desktopWidth: options.desktopWidth || 1920,
-    desktopHeight: options.desktopHeight || 1080,
-    mobileWidth: options.mobileWidth || 390,
-    mobileHeight: options.mobileHeight || 844,
-    quality: options.quality || 'high',
-    maxPages: options.maxPages || 50,
+    captureSize: captureSize,
     scrollDelay: options.scrollDelay || 150,
     ...options
   };
   
+  // Mark all pages as pending
+  const pages = useDiscovered ? captureSession.pages : [];
+  pages.forEach(p => { p.status = 'pending'; });
+  
   captureSession = {
+    ...captureSession,
     project: projectId,
     site: hostname,
-    pages: [],
-    status: 'starting',
+    baseUrl: baseUrl,
+    pages: pages,
+    status: 'capturing',
     progress: 0,
+    currentPage: null,
+    currentViewport: null,
     error: null,
     config
   };
   
   res.json({ status: 'started', projectId, config });
   
-  runCapture(url, config, projectId, projectDir).catch(err => {
+  runCapture(baseUrl, config, projectId, projectDir).catch(err => {
     captureSession.status = 'error';
     captureSession.error = err.message;
     console.error('Capture error:', err);
   });
 });
 
-async function runCapture(startUrl, config, projectId, projectDir) {
+async function runCapture(baseUrl, config, projectId, projectDir) {
   const browser = await chromium.launch();
-  const baseUrl = new URL(startUrl).origin;
-  const siteSlug = new URL(startUrl).hostname.split('.')[0];
+  const siteSlug = new URL(baseUrl).hostname.split('.')[0];
   
   try {
-    captureSession.status = 'crawling';
-    const pages = await crawlNavigation(browser, startUrl, baseUrl, config.maxPages);
-    captureSession.pages = pages;
-    
-    captureSession.status = 'capturing';
+    const pages = captureSession.pages;
     const totalCaptures = pages.length * ((config.desktop ? 1 : 0) + (config.mobile ? 1 : 0));
     let completed = 0;
     
-    const scaleFactors = { low: 0.5, medium: 1, high: 1.5, full: 2 };
-    const scale = scaleFactors[config.quality] || 1;
+    // Capture at 4K (1920 viewport × 2x scale = 3840px output)
+    const desktopViewport = 1920;
+    const mobileViewport = 390;
+    const deviceScale = 2;
     
-    for (const page of pages) {
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
       const pageUrl = `${baseUrl}${page.path}`;
+      
+      page.status = 'capturing';
+      captureSession.currentPage = page.slug;
       
       // Desktop
       if (config.desktop) {
+        captureSession.currentViewport = 'desktop';
         const filename = `${siteSlug}_${page.slug}_desktop.png`;
         const success = await captureScreenshot(browser, {
           url: pageUrl,
-          viewport: { width: config.desktopWidth, height: config.desktopHeight },
-          scale,
+          viewport: { width: desktopViewport, height: 1080 },
+          scale: deviceScale,
           isMobile: false,
           outputPath: path.join(projectDir, filename),
           scrollDelay: config.scrollDelay
@@ -223,11 +296,12 @@ async function runCapture(startUrl, config, projectId, projectDir) {
       
       // Mobile
       if (config.mobile) {
+        captureSession.currentViewport = 'mobile';
         const filename = `${siteSlug}_${page.slug}_mobile.png`;
         const success = await captureScreenshot(browser, {
           url: pageUrl,
-          viewport: { width: config.mobileWidth, height: config.mobileHeight },
-          scale: scale * 2,
+          viewport: { width: mobileViewport, height: 844 },
+          scale: deviceScale,
           isMobile: true,
           outputPath: path.join(projectDir, filename),
           scrollDelay: config.scrollDelay
@@ -243,18 +317,25 @@ async function runCapture(startUrl, config, projectId, projectDir) {
         completed++;
         captureSession.progress = Math.round((completed / totalCaptures) * 100);
       }
+      
+      page.status = 'done';
     }
     
-    // Save sitemap.json to project folder
+    // Save sitemap.json
+    const now = new Date();
     const sitemap = {
       site: captureSession.site,
-      captured_at: new Date().toISOString().split('T')[0],
+      captured_at: now.toISOString().split('T')[0],
+      captured_at_time: now.toTimeString().slice(0, 5),
+      captureSize: config.captureSize,
       pages: pages
     };
     fs.writeFileSync(path.join(projectDir, 'sitemap.json'), JSON.stringify(sitemap, null, 2));
     
     captureSession.status = 'done';
     captureSession.progress = 100;
+    captureSession.currentPage = null;
+    captureSession.currentViewport = null;
     
   } finally {
     await browser.close();
@@ -316,7 +397,7 @@ async function captureScreenshot(browser, { url, viewport, scale, isMobile, outp
   }
 }
 
-async function crawlNavigation(browser, startUrl, baseUrl, maxPages) {
+async function crawlNavigation(browser, startUrl, baseUrl, maxPages, maxDepth) {
   const context = await browser.newContext();
   const page = await context.newPage();
   
@@ -362,7 +443,7 @@ async function crawlNavigation(browser, startUrl, baseUrl, maxPages) {
   const pages = [];
   const slugMap = new Map();
   
-  pages.push({ slug: 'home', title: 'Home', path: '/', parent: null, depth: 0 });
+  pages.push({ slug: 'home', title: 'Home', path: '/', parent: null, depth: 0, status: 'pending' });
   slugMap.set('/', 'home');
   
   for (const link of links.slice(0, maxPages - 1)) {
@@ -372,6 +453,9 @@ async function crawlNavigation(browser, startUrl, baseUrl, maxPages) {
     const slug = pathParts.join('-') || link.path.replace(/[^a-z0-9]/gi, '-');
     const depth = pathParts.length;
     
+    // Filter by maxDepth
+    if (depth > maxDepth) continue;
+    
     let parent = 'home';
     if (depth > 1) {
       const parentPath = '/' + pathParts.slice(0, -1).join('/');
@@ -380,7 +464,7 @@ async function crawlNavigation(browser, startUrl, baseUrl, maxPages) {
     
     if (!slugMap.has(link.path)) {
       slugMap.set(link.path, slug);
-      pages.push({ slug, title: link.title, path: link.path, parent, depth });
+      pages.push({ slug, title: link.title, path: link.path, parent, depth, status: 'pending' });
     }
   }
   
@@ -415,15 +499,26 @@ function getWebUI() {
     .btn-secondary:hover { background: #e0e0e0; }
     .btn-danger { background: #dc3545; }
     .btn-danger:hover { background: #c82333; }
-    .btn-small { padding: 6px 12px; font-size: 12px; }
+    .btn-small { padding: 6px 12px; font-size: 12px; text-decoration: none; border-radius: 6px; }
+    .btn-row { display: flex; gap: 12px; }
+    .btn-row button { flex: 1; }
     .progress-bar { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
     .progress-fill { height: 100%; background: #007AFF; transition: width 0.3s; }
     .status { font-size: 14px; color: #666; }
     .status.done { color: #28a745; }
     .status.error { color: #dc3545; }
-    .pages-list { max-height: 200px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
-    .page-item { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; justify-content: space-between; }
+    .pages-list { max-height: 400px; overflow-y: auto; border: 1px solid #eee; border-radius: 6px; }
+    .page-item { padding: 10px 12px; border-bottom: 1px solid #eee; font-size: 13px; display: flex; align-items: center; gap: 12px; }
     .page-item:last-child { border-bottom: none; }
+    .page-item.capturing { background: #fff3cd; }
+    .page-item.done { background: #d4edda; }
+    .page-depth { background: #eee; padding: 2px 8px; border-radius: 10px; font-size: 11px; color: #666; min-width: 20px; text-align: center; }
+    .page-title { flex: 1; font-weight: 500; }
+    .page-path { color: #888; font-size: 12px; }
+    .page-status { font-size: 11px; min-width: 80px; text-align: right; }
+    .page-status.pending { color: #888; }
+    .page-status.capturing { color: #856404; font-weight: 500; }
+    .page-status.done { color: #28a745; }
     .figma-section { background: #f0f7ff; border: 1px solid #007AFF33; }
     code { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
     .hint { font-size: 11px; color: #888; margin-top: -12px; margin-bottom: 16px; }
@@ -442,6 +537,8 @@ function getWebUI() {
     .tab.active { background: #007AFF; color: white; }
     .tab-content { display: none; }
     .tab-content.active { display: block; }
+    .summary { background: #f9f9f9; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+    .summary strong { color: #333; }
   </style>
 </head>
 <body>
@@ -456,32 +553,39 @@ function getWebUI() {
     
     <div id="capture-tab" class="tab-content active">
       <div class="card">
-        <h2>1. Enter URL</h2>
+        <h2>1. Enter URL & Discover Pages</h2>
         <label>Website URL</label>
         <input type="text" id="url" placeholder="https://example.com">
-      </div>
-      
-      <div class="card">
-        <h2>2. Configure Options</h2>
-        <div class="checkbox-row">
-          <label><input type="checkbox" id="desktop" checked> Desktop</label>
-          <label><input type="checkbox" id="mobile" checked> Mobile</label>
-          <label><input type="checkbox" id="crawl" checked> Auto-crawl</label>
-        </div>
         <div class="row">
           <div>
-            <label>Quality</label>
-            <select id="quality">
-              <option value="low">Low (0.5x)</option>
-              <option value="medium">Medium (1x)</option>
-              <option value="high" selected>High (1.5x)</option>
-              <option value="full">Full (2x)</option>
+            <label>Max Depth</label>
+            <select id="maxDepth">
+              <option value="1">1 level</option>
+              <option value="2">2 levels</option>
+              <option value="3" selected>3 levels</option>
+              <option value="4">4 levels</option>
+              <option value="5">5 levels</option>
             </select>
           </div>
           <div>
             <label>Max Pages</label>
             <input type="number" id="maxPages" value="50" min="1" max="100">
           </div>
+        </div>
+        <button id="discoverBtn" onclick="discoverPages()" style="width: 100%;">🔍 Discover Pages</button>
+      </div>
+      
+      <div class="card" id="pagesCard" style="display: none;">
+        <h2>2. Review Discovered Pages</h2>
+        <div id="pagesSummary" class="summary"></div>
+        <div class="pages-list" id="pagesList"></div>
+      </div>
+      
+      <div class="card" id="captureCard" style="display: none;">
+        <h2>3. Configure & Capture</h2>
+        <div class="checkbox-row">
+          <label><input type="checkbox" id="desktop" checked> Desktop (1920×2x = 3840px)</label>
+          <label><input type="checkbox" id="mobile" checked> Mobile (390×2x = 780px)</label>
         </div>
         <div class="row">
           <div>
@@ -490,18 +594,15 @@ function getWebUI() {
             <p class="hint">Time to wait for lazy-loaded content</p>
           </div>
         </div>
-        <button id="startBtn" onclick="startCapture()" style="width: 100%;">Start Capture</button>
+        <div class="btn-row">
+          <button id="captureBtn" onclick="startCapture()">📸 Start Capture</button>
+        </div>
       </div>
       
       <div class="card" id="progressCard" style="display: none;">
-        <h2>3. Progress</h2>
+        <h2>Progress</h2>
         <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width: 0%"></div></div>
         <p class="status" id="statusText">Starting...</p>
-      </div>
-      
-      <div class="card" id="pagesCard" style="display: none;">
-        <h2>Discovered Pages</h2>
-        <div class="pages-list" id="pagesList"></div>
       </div>
       
       <div class="card figma-section" id="figmaCard" style="display: none;">
@@ -522,6 +623,7 @@ function getWebUI() {
   
   <script>
     let pollInterval;
+    let discoveredPages = [];
     
     function showTab(tab) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -539,7 +641,7 @@ function getWebUI() {
       const container = document.getElementById('projectsList');
       
       if (projects.length === 0) {
-        container.innerHTML = '<div class="empty-state">No saved projects yet. Capture a website to get started.</div>';
+        container.innerHTML = '<div class="empty-state">No saved projects yet.</div>';
         return;
       }
       
@@ -547,9 +649,10 @@ function getWebUI() {
         '<div class="project-item">' +
           '<div class="project-info">' +
             '<h3>' + p.site + '</h3>' +
-            '<p>' + p.pageCount + ' pages • ' + p.captured_at + '</p>' +
+            '<p>' + p.pageCount + ' pages • ' + p.captured_at + ' ' + (p.captured_at_time || '') + '</p>' +
           '</div>' +
           '<div class="project-actions">' +
+            '<a class="btn-small btn-secondary" href="/captures/' + p.id + '/" target="_blank">View</a>' +
             '<button class="btn-small btn-danger" onclick="deleteProject(\\'' + p.id + '\\')">Delete</button>' +
           '</div>' +
         '</div>'
@@ -562,13 +665,84 @@ function getWebUI() {
       loadProjects();
     }
     
-    async function startCapture() {
+    async function discoverPages() {
       const url = document.getElementById('url').value.trim();
       if (!url) { alert('Please enter a URL'); return; }
       
-      document.getElementById('startBtn').disabled = true;
+      document.getElementById('discoverBtn').disabled = true;
+      document.getElementById('discoverBtn').textContent = '🔍 Discovering...';
+      document.getElementById('pagesCard').style.display = 'none';
+      document.getElementById('captureCard').style.display = 'none';
+      
+      try {
+        const res = await fetch('/api/discover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            url, 
+            options: {
+              maxDepth: parseInt(document.getElementById('maxDepth').value),
+              maxPages: parseInt(document.getElementById('maxPages').value)
+            }
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (data.pages) {
+          discoveredPages = data.pages;
+          renderPagesList(discoveredPages);
+          document.getElementById('pagesCard').style.display = 'block';
+          document.getElementById('captureCard').style.display = 'block';
+          
+          // Summary by depth
+          const byDepth = {};
+          discoveredPages.forEach(p => {
+            byDepth[p.depth] = (byDepth[p.depth] || 0) + 1;
+          });
+          const summary = Object.entries(byDepth)
+            .sort((a, b) => a[0] - b[0])
+            .map(([d, c]) => '<strong>Level ' + d + ':</strong> ' + c + ' pages')
+            .join(' &nbsp;•&nbsp; ');
+          document.getElementById('pagesSummary').innerHTML = 
+            '<strong>Total:</strong> ' + discoveredPages.length + ' pages &nbsp;|&nbsp; ' + summary;
+        }
+      } catch (err) {
+        alert('Error: ' + err.message);
+      }
+      
+      document.getElementById('discoverBtn').disabled = false;
+      document.getElementById('discoverBtn').textContent = '🔍 Discover Pages';
+    }
+    
+    function renderPagesList(pages) {
+      const list = document.getElementById('pagesList');
+      list.innerHTML = pages.map(p => 
+        '<div class="page-item ' + (p.status || 'pending') + '" data-slug="' + p.slug + '">' +
+          '<span class="page-depth">' + p.depth + '</span>' +
+          '<span class="page-title">' + escapeHtml(p.title) + '</span>' +
+          '<span class="page-path">' + p.path + '</span>' +
+          '<span class="page-status ' + (p.status || 'pending') + '">' + getStatusText(p) + '</span>' +
+        '</div>'
+      ).join('');
+    }
+    
+    function getStatusText(page) {
+      if (page.status === 'capturing') return '⏳ Capturing...';
+      if (page.status === 'done') return '✓ Done';
+      return 'Pending';
+    }
+    
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    
+    async function startCapture() {
+      document.getElementById('captureBtn').disabled = true;
       document.getElementById('progressCard').style.display = 'block';
       document.getElementById('figmaCard').style.display = 'none';
+      
+      const url = document.getElementById('url').value.trim();
       
       await fetch('/api/capture', {
         method: 'POST',
@@ -578,15 +752,12 @@ function getWebUI() {
           options: {
             desktop: document.getElementById('desktop').checked,
             mobile: document.getElementById('mobile').checked,
-            crawl: document.getElementById('crawl').checked,
-            quality: document.getElementById('quality').value,
-            maxPages: parseInt(document.getElementById('maxPages').value),
             scrollDelay: parseInt(document.getElementById('scrollDelay').value)
           }
         })
       });
       
-      pollInterval = setInterval(pollStatus, 500);
+      pollInterval = setInterval(pollStatus, 300);
     }
     
     async function pollStatus() {
@@ -597,28 +768,29 @@ function getWebUI() {
       const statusEl = document.getElementById('statusText');
       statusEl.className = 'status ' + data.status;
       
-      if (data.status === 'crawling') statusEl.textContent = 'Discovering pages...';
-      else if (data.status === 'capturing') statusEl.textContent = 'Capturing... ' + data.progress + '%';
-      else if (data.status === 'done') {
+      if (data.status === 'capturing') {
+        let text = 'Capturing... ' + data.progress + '%';
+        if (data.currentPage) {
+          text += ' — ' + data.currentPage + ' (' + data.currentViewport + ')';
+        }
+        statusEl.textContent = text;
+      } else if (data.status === 'done') {
         statusEl.textContent = '✓ Done! ' + data.pages.length + ' pages saved';
         clearInterval(pollInterval);
-        document.getElementById('startBtn').disabled = false;
+        document.getElementById('captureBtn').disabled = false;
         document.getElementById('figmaCard').style.display = 'block';
       } else if (data.status === 'error') {
         statusEl.textContent = '✗ ' + data.error;
         clearInterval(pollInterval);
-        document.getElementById('startBtn').disabled = false;
+        document.getElementById('captureBtn').disabled = false;
       }
       
+      // Update pages list with status
       if (data.pages?.length) {
-        document.getElementById('pagesCard').style.display = 'block';
-        document.getElementById('pagesList').innerHTML = data.pages.map(p => 
-          '<div class="page-item"><span>' + p.title + '</span><span style="color:#888">' + p.path + '</span></div>'
-        ).join('');
+        renderPagesList(data.pages);
       }
     }
     
-    // Load projects on page load
     loadProjects();
   </script>
 </body>

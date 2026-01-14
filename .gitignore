@@ -3,10 +3,8 @@ node_modules/
 __pycache__/
 *.pyc
 
-# Screenshots (large binary files)
-*.png
-*.jpg
-*.jpeg
+# Captures (large binary files)
+captures/
 
 # OS files
 .DS_Store
@@ -18,3 +16,8 @@ Thumbs.db
 
 # Logs
 *.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local

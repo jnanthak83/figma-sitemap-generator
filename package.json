@@ -1,16 +1,24 @@
 {
   "name": "sitemap-capture-server",
-  "version": "1.0.0",
-  "description": "Desktop app to capture full-page screenshots for sitemap generation",
+  "version": "1.4.0",
+  "description": "Desktop app to capture full-page 4K screenshots for Figma sitemap generation",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js",
-    "dev": "node app.js --open"
+    "start": "node app.js"
+  },
+  "keywords": ["figma", "sitemap", "screenshot", "playwright", "ux", "design"],
+  "author": "Jesh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jnanthak83/figma-sitemap-generator.git"
   },
   "dependencies": {
     "express": "^4.18.2",
     "playwright": "^1.40.0",
-    "cors": "^2.8.5",
-    "open": "^9.1.0"
+    "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }

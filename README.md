@@ -1,65 +1,147 @@
 # Sitemap Generator
 
-Generate visual sitemaps in Figma from full-page website screenshots.
+A visual sitemap generator for Figma. Captures full-page 4K screenshots of any website and creates a hierarchical sitemap layout in Figma.
 
-![Screenshot](https://via.placeholder.com/800x400?text=Sitemap+Generator)
-
-## Quick Start
-
-### 1. Install & Run Desktop App
-
-```bash
-git clone https://github.com/jnanthak83/figma-sitemap-generator.git
-cd figma-sitemap-generator
-npm install
-npx playwright install chromium
-npm start
-```
-
-Opens http://localhost:3000
-
-### 2. Capture a Website
-
-1. Enter website URL
-2. Configure options (quality, max pages)
-3. Click **Start Capture**
-4. Wait for screenshots to complete
-
-### 3. Install Figma Plugin
-
-1. In Figma: **Plugins** → **Development** → **Import plugin from manifest...**
-2. Select `manifest.json` from this folder
-
-### 4. Generate Sitemap
-
-1. Open any Figma file
-2. **Plugins** → **Development** → **Sitemap Generator**
-3. Select image quality (200-800px)
-4. Click **Generate Sitemap**
+![Sitemap Example](https://via.placeholder.com/800x400?text=Sitemap+Preview)
 
 ## Features
 
-- 🔍 **Auto-crawl** — Discovers pages from navigation links
-- 📱 **Desktop + Mobile** — Captures both viewports
-- 🎨 **Quality options** — Low to XL image sizes
-- 🌲 **Tree layout** — Hierarchical sitemap with connectors
-- ⚡ **Fast** — Parallel captures with smart timeouts
+- **4K Screenshots** - Captures at 1920×2x = 3840px for crisp detail
+- **Desktop + Mobile** - Side-by-side viewport comparison
+- **Auto-Discovery** - Crawls navigation to find all pages
+- **Hierarchy Detection** - Organizes pages by depth with connectors
+- **Large Image Support** - Tiles images to handle any page height
+- **Project Management** - Save and manage multiple captures
 
-## Options
+## Quick Start
+
+### Option 1: Docker (Recommended)
+
+```bash
+# Clone the repo
+git clone https://github.com/jnanthak83/figma-sitemap-generator.git
+cd figma-sitemap-generator
+
+# Run with Docker Compose
+docker-compose up -d
+
+# Open http://localhost:3000
+```
+
+### Option 2: Local Install
+
+```bash
+# Clone the repo
+git clone https://github.com/jnanthak83/figma-sitemap-generator.git
+cd figma-sitemap-generator
+
+# Install dependencies
+npm install
+
+# Install Playwright browser
+npx playwright install chromium
+
+# Start server
+npm start
+
+# Open http://localhost:3000
+```
+
+## Usage
+
+### 1. Capture Website
+
+1. Open http://localhost:3000
+2. Enter a URL (e.g., `https://example.com`)
+3. Set crawl depth and max pages
+4. Click **Discover Pages** to find all navigation links
+5. Review the page list, then click **Start Capture**
+6. Wait for all pages to be captured
+
+### 2. Import to Figma
+
+1. Open Figma Desktop
+2. Go to **Plugins > Development > Import plugin from manifest**
+3. Select `manifest.json` from this repo
+4. Run the plugin: **Plugins > Development > Sitemap Generator**
+5. Select your project and display size
+6. Click **Generate Sitemap**
+
+## Configuration
+
+### Capture Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| Desktop | ✓ | Capture 1920×1080 viewport |
-| Mobile | ✓ | Capture 390×844 viewport |
-| Auto-crawl | ✓ | Discover pages from nav |
-| Quality | High | low/medium/high/full |
-| Max Pages | 50 | Limit discovered pages |
+| Max Depth | 3 | How deep to crawl navigation (1-5) |
+| Max Pages | 50 | Maximum pages to capture |
+| Desktop | ✓ | Capture at 1920px viewport |
+| Mobile | ✓ | Capture at 390px viewport |
+| Scroll Delay | 150ms | Wait time for lazy content |
+
+### Figma Plugin Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| Display Size | 500px | Thumbnail width in Figma |
+| Format | PNG | PNG (sharp) or JPEG (smaller) |
+
+## Project Structure
+
+```
+figma-sitemap-generator/
+├── app.js              # Capture server (Express + Playwright)
+├── code.js             # Figma plugin logic
+├── ui.html             # Figma plugin UI
+├── manifest.json       # Figma plugin config
+├── Dockerfile          # Docker build
+├── docker-compose.yml  # Docker orchestration
+├── captures/           # Screenshot output
+└── SPEC.md             # Technical specification
+```
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Web UI |
+| GET | `/api/projects` | List saved projects |
+| POST | `/api/discover` | Crawl site navigation |
+| POST | `/api/capture` | Start screenshot capture |
+| DELETE | `/api/projects/:id` | Delete a project |
+
+## Technical Details
+
+- **Viewport**: Desktop 1920×1080, Mobile 390×844
+- **Scale**: 2x for retina/4K output
+- **Wait Strategy**: `domcontentloaded` + 15s timeout
+- **Image Format**: PNG for quality, JPEG optional
+- **Tiling**: Large images split into 1000px tiles
 
 ## Requirements
 
 - Node.js 18+
-- Figma Desktop App
+- Docker (optional, recommended)
+- Figma Desktop (for plugin)
+
+## Troubleshooting
+
+**Plugin crashes with "Image too large"**
+- Use a smaller display size (500px or 800px)
+- The plugin tiles large images automatically
+
+**Pages not loading correctly**
+- Increase scroll delay for lazy-loaded sites
+- Some sites may block automated browsers
+
+**Docker build fails**
+- Ensure Docker has enough memory (4GB+)
+- Try `docker system prune` to free space
 
 ## License
 
 MIT
+
+## Contributing
+
+Pull requests welcome! See [SPEC.md](SPEC.md) for technical details.

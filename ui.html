@@ -7,6 +7,8 @@
     h2 { font-size: 14px; margin-bottom: 12px; }
     label { display: block; margin-bottom: 4px; color: #333; font-weight: 500; }
     input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 12px; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
     button { width: 100%; padding: 10px; background: #18A0FB; color: white; border: none; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; }
     button:hover { background: #0d8de8; }
     button:disabled { background: #ccc; cursor: not-allowed; }
@@ -19,44 +21,155 @@
     .refresh-btn:hover { background: #e0e0e0; }
     .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
     .project-info { font-size: 11px; color: #666; margin-top: -8px; margin-bottom: 12px; }
+    
+    /* Connection states */
+    #connectedState { display: none; }
+    #disconnectedState { display: none; }
+    
+    .disconnected-box { 
+      background: #f8f8f8; 
+      border: 1px solid #e0e0e0; 
+      border-radius: 8px; 
+      padding: 20px; 
+      text-align: center;
+    }
+    .disconnected-box h3 { font-size: 14px; margin-bottom: 8px; color: #333; }
+    .disconnected-box p { color: #666; margin-bottom: 16px; line-height: 1.5; }
+    .disconnected-box .icon { font-size: 32px; margin-bottom: 12px; }
+    
+    .btn-secondary { 
+      background: #f0f0f0; 
+      color: #333; 
+      margin-top: 8px;
+    }
+    .btn-secondary:hover { background: #e0e0e0; }
+    
+    .btn-small {
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+    
+    .server-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin-bottom: 12px;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .status-dot.connected { background: #34c759; }
+    .status-dot.disconnected { background: #ff3b30; }
+    
+    .help-text { font-size: 10px; color: #999; margin-top: 4px; }
   </style>
 </head>
 <body>
   <h2>Sitemap Generator</h2>
-  <div class="info">Make sure the desktop app is running at localhost:3000</div>
   
-  <label>Server URL</label>
-  <input type="text" id="serverUrl" value="http://localhost:3000">
-  
-  <div class="header-row">
-    <label style="margin-bottom: 0;">Project</label>
-    <button class="refresh-btn" onclick="loadProjects()">↻ Refresh</button>
+  <div class="server-status">
+    <span class="status-dot" id="statusDot"></span>
+    <span id="statusText">Checking server...</span>
   </div>
-  <select id="projectSelect">
-    <option value="">Loading projects...</option>
-  </select>
-  <div id="projectInfo" class="project-info"></div>
   
-  <label>Image Size</label>
-  <select id="imageSize">
-    <option value="200">Small (200px)</option>
-    <option value="300" selected>Medium (300px)</option>
-    <option value="500">Large (500px)</option>
-    <option value="800">XL (800px)</option>
-  </select>
+  <!-- Disconnected State -->
+  <div id="disconnectedState">
+    <div class="disconnected-box">
+      <div class="icon">🔌</div>
+      <h3>Server Not Running</h3>
+      <p>Start the capture server to scan websites and generate sitemaps.</p>
+      
+      <button id="openServerBtn">Open Server UI</button>
+      <p class="help-text">Opens localhost:3000 in your browser</p>
+      
+      <button class="btn-secondary" id="retryBtn">↻ Retry Connection</button>
+    </div>
+    
+    <div style="margin-top: 16px; padding: 12px; background: #f8f8f8; border-radius: 6px;">
+      <label style="margin-bottom: 8px;">Server URL</label>
+      <input type="text" id="serverUrlDisconnected" value="http://localhost:3000">
+      <p class="help-text">Default: http://localhost:3000</p>
+    </div>
+    
+    <div style="margin-top: 16px; padding: 12px; background: #fffbeb; border-radius: 6px; font-size: 11px; color: #92400e;">
+      <strong>How to start:</strong><br>
+      1. Open Terminal<br>
+      2. <code style="background: #fff; padding: 2px 4px; border-radius: 2px;">cd figma-sitemap-plugin</code><br>
+      3. <code style="background: #fff; padding: 2px 4px; border-radius: 2px;">npm start</code>
+    </div>
+  </div>
   
-  <button id="generateBtn">Generate Sitemap</button>
-  <div id="statusBox"></div>
+  <!-- Connected State -->
+  <div id="connectedState">
+    <div class="header-row">
+      <label style="margin-bottom: 0;">Project</label>
+      <button class="refresh-btn" id="refreshBtn">↻ Refresh</button>
+    </div>
+    <select id="projectSelect">
+      <option value="">Loading projects...</option>
+    </select>
+    <div id="projectInfo" class="project-info"></div>
+    
+    <div class="row">
+      <div>
+        <label>Display Size</label>
+        <select id="imageSize">
+          <option value="300">Small (300px)</option>
+          <option value="500" selected>Medium (500px)</option>
+          <option value="800">Large (800px)</option>
+          <option value="1200">XL (1200px)</option>
+          <option value="1920">Max (1920px)</option>
+        </select>
+      </div>
+      <div>
+        <label>Format</label>
+        <select id="imageFormat">
+          <option value="png" selected>PNG (sharp)</option>
+          <option value="jpeg">JPEG (smaller)</option>
+        </select>
+      </div>
+    </div>
+    
+    <button id="generateBtn">Generate Sitemap</button>
+    
+    <div style="margin-top: 12px;">
+      <button class="btn-secondary btn-small" id="newCaptureBtn">+ New Capture</button>
+    </div>
+    
+    <div id="statusBox"></div>
+  </div>
 
   <script>
     (function() {
+      // Elements
+      var connectedState = document.getElementById('connectedState');
+      var disconnectedState = document.getElementById('disconnectedState');
+      var statusDot = document.getElementById('statusDot');
+      var statusText = document.getElementById('statusText');
       var generateBtn = document.getElementById('generateBtn');
+      var refreshBtn = document.getElementById('refreshBtn');
+      var retryBtn = document.getElementById('retryBtn');
+      var openServerBtn = document.getElementById('openServerBtn');
+      var newCaptureBtn = document.getElementById('newCaptureBtn');
       var statusBox = document.getElementById('statusBox');
       var projectSelect = document.getElementById('projectSelect');
       var projectInfo = document.getElementById('projectInfo');
+      var serverUrlInput = document.getElementById('serverUrlDisconnected');
       
-      var MAX_DIMENSION = 4096;
-      var MAX_HEIGHT = 2500;
+      // Tile size for Figma limits
+      var MAX_TILE = 1000;
+      
+      var currentSitemap = null;
+      var currentPageIndex = 0;
+      var currentTiles = [];
+      var currentTileIndex = 0;
+      var serverUrl = 'http://localhost:3000';
+      var thumbW = 500;
+      var format = 'png';
+      var isConnected = false;
       
       function showStatus(msg, type) {
         statusBox.textContent = msg;
@@ -64,150 +177,273 @@
         statusBox.style.display = 'block';
       }
       
-      // Load available projects from server
-      window.loadProjects = async function() {
-        var serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+      function setConnectionState(connected) {
+        isConnected = connected;
+        if (connected) {
+          connectedState.style.display = 'block';
+          disconnectedState.style.display = 'none';
+          statusDot.className = 'status-dot connected';
+          statusText.textContent = 'Connected to ' + serverUrl;
+        } else {
+          connectedState.style.display = 'none';
+          disconnectedState.style.display = 'block';
+          statusDot.className = 'status-dot disconnected';
+          statusText.textContent = 'Server offline';
+        }
+      }
+      
+      function checkConnection() {
+        serverUrl = serverUrlInput.value.replace(/\/$/, '');
+        statusText.textContent = 'Checking...';
+        
+        fetch(serverUrl + '/api/status', { method: 'GET' })
+          .then(function(res) {
+            if (res.ok) {
+              setConnectionState(true);
+              loadProjects();
+            } else {
+              setConnectionState(false);
+            }
+          })
+          .catch(function() {
+            setConnectionState(false);
+          });
+      }
+      
+      function loadProjects() {
         projectSelect.innerHTML = '<option value="">Loading...</option>';
         
-        try {
-          var res = await fetch(serverUrl + '/api/projects');
-          var projects = await res.json();
-          
-          if (projects.length === 0) {
-            projectSelect.innerHTML = '<option value="">No projects found</option>';
-            projectInfo.textContent = 'Capture a website first using the desktop app.';
-            return;
-          }
-          
-          projectSelect.innerHTML = projects.map(function(p) {
-            return '<option value="' + p.id + '">' + p.site + ' (' + p.captured_at + ')</option>';
-          }).join('');
-          
-          updateProjectInfo();
-        } catch (err) {
-          projectSelect.innerHTML = '<option value="">Error loading projects</option>';
-          projectInfo.textContent = 'Make sure the server is running.';
-        }
-      };
+        fetch(serverUrl + '/api/projects')
+          .then(function(res) { return res.json(); })
+          .then(function(projects) {
+            if (projects.length === 0) {
+              projectSelect.innerHTML = '<option value="">No projects - capture a site first</option>';
+              projectInfo.textContent = '';
+              return;
+            }
+            
+            projectSelect.innerHTML = projects.map(function(p) {
+              var time = p.captured_at_time || '';
+              var label = p.site + ' — ' + p.captured_at + (time ? ' ' + time : '') + ' (' + p.pageCount + 'pg)';
+              return '<option value="' + p.id + '">' + label + '</option>';
+            }).join('');
+            
+            updateProjectInfo();
+          })
+          .catch(function() {
+            projectSelect.innerHTML = '<option value="">Error loading</option>';
+            setConnectionState(false);
+          });
+      }
       
       function updateProjectInfo() {
         var selected = projectSelect.options[projectSelect.selectedIndex];
-        if (selected && selected.value) {
-          projectInfo.textContent = 'Project ID: ' + selected.value;
-        } else {
-          projectInfo.textContent = '';
-        }
+        projectInfo.textContent = selected && selected.value ? 'ID: ' + selected.value : '';
       }
       
+      // Event bindings
+      refreshBtn.addEventListener('click', loadProjects);
       projectSelect.addEventListener('change', updateProjectInfo);
+      retryBtn.addEventListener('click', checkConnection);
       
-      // Split image into tiles if > 4096px (like Insert Big Image plugin)
-      function computeTileDimensions(dimension) {
-        if (dimension <= MAX_DIMENSION) return [dimension];
-        
-        var pieces = 1;
-        var currentDim;
-        do {
-          pieces++;
-          currentDim = Math.floor(dimension / pieces);
-        } while (currentDim >= MAX_DIMENSION);
-        
-        var remainder = dimension % currentDim;
-        var result = Array(pieces - 1).fill(currentDim);
-        result.push(currentDim + remainder);
-        return result;
-      }
+      openServerBtn.addEventListener('click', function() {
+        // Tell Figma to open the URL
+        parent.postMessage({ pluginMessage: { type: 'open-url', url: serverUrl } }, '*');
+      });
       
-      // Split large image into tiles
-      async function splitImage(blob, maxW) {
+      newCaptureBtn.addEventListener('click', function() {
+        parent.postMessage({ pluginMessage: { type: 'open-url', url: serverUrl } }, '*');
+      });
+      
+      serverUrlInput.addEventListener('change', function() {
+        serverUrl = serverUrlInput.value.replace(/\/$/, '');
+      });
+      
+      // Image processing
+      function processImage(blob, maxW, fmt, imageType) {
         return new Promise(function(resolve) {
           var img = new Image();
           img.onload = function() {
-            var scale = maxW / img.width;
-            var w = maxW;
+            var scale = Math.min(1, maxW / img.width);
+            var w = Math.round(img.width * scale);
             var h = Math.round(img.height * scale);
             
-            // Cap height
-            if (h > MAX_HEIGHT) {
-              h = MAX_HEIGHT;
-            }
+            var mimeType = fmt === 'jpeg' ? 'image/jpeg' : 'image/png';
+            var quality = fmt === 'jpeg' ? 0.8 : undefined;
             
-            // Check if we need to tile
-            var widths = computeTileDimensions(w);
-            var heights = computeTileDimensions(h);
+            var cols = Math.ceil(w / MAX_TILE);
+            var rows = Math.ceil(h / MAX_TILE);
+            var tileW = Math.ceil(w / cols);
+            var tileH = Math.ceil(h / rows);
             
             var tiles = [];
-            var yOffset = 0;
             
-            for (var hi = 0; hi < heights.length; hi++) {
-              var tileH = heights[hi];
-              var xOffset = 0;
-              
-              for (var wi = 0; wi < widths.length; wi++) {
-                var tileW = widths[wi];
-                
-                var canvas = document.createElement('canvas');
-                canvas.width = tileW;
-                canvas.height = tileH;
-                var ctx = canvas.getContext('2d');
-                
-                // Calculate source region
-                var srcX = (xOffset / scale);
-                var srcY = (yOffset / scale);
-                var srcW = (tileW / scale);
-                var srcH = (tileH / scale);
-                
-                ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, tileW, tileH);
+            for (var row = 0; row < rows; row++) {
+              for (var col = 0; col < cols; col++) {
+                var tileX = col * tileW;
+                var tileY = row * tileH;
+                var tw = Math.min(tileW, w - tileX);
+                var th = Math.min(tileH, h - tileY);
                 
                 tiles.push({
-                  canvas: canvas,
-                  x: xOffset,
-                  y: yOffset,
-                  width: tileW,
-                  height: tileH
+                  srcX: tileX / scale,
+                  srcY: tileY / scale,
+                  srcW: tw / scale,
+                  srcH: th / scale,
+                  x: tileX,
+                  y: tileY,
+                  width: tw,
+                  height: th,
+                  imageType: imageType,
+                  totalWidth: w,
+                  totalHeight: h
                 });
-                
-                xOffset += tileW;
               }
-              yOffset += tileH;
             }
             
-            // Convert tiles to bytes
-            var promises = tiles.map(function(tile) {
-              return new Promise(function(res) {
-                var format = maxW >= 500 ? 'image/jpeg' : 'image/png';
-                var quality = maxW >= 500 ? 0.85 : undefined;
-                
-                tile.canvas.toBlob(function(b) {
-                  b.arrayBuffer().then(function(buf) {
-                    res({
-                      bytes: Array.from(new Uint8Array(buf)),
-                      x: tile.x,
-                      y: tile.y,
-                      width: tile.width,
-                      height: tile.height
-                    });
-                  });
-                }, format, quality);
-              });
-            });
+            tiles.img = img;
+            tiles.mimeType = mimeType;
+            tiles.quality = quality;
             
-            Promise.all(promises).then(function(results) {
-              resolve({
-                tiles: results,
-                totalWidth: w,
-                totalHeight: h
-              });
-            });
+            resolve(tiles);
           };
+          img.onerror = function() { resolve(null); };
           img.src = URL.createObjectURL(blob);
         });
       }
       
-      generateBtn.addEventListener('click', async function() {
-        var serverUrl = document.getElementById('serverUrl').value.replace(/\/$/, '');
+      function extractTile(tiles, index) {
+        return new Promise(function(resolve) {
+          var tile = tiles[index];
+          var img = tiles.getImg(tile.tileSource);
+          
+          var canvas = document.createElement('canvas');
+          canvas.width = tile.width;
+          canvas.height = tile.height;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, tile.srcX, tile.srcY, tile.srcW, tile.srcH, 0, 0, tile.width, tile.height);
+          
+          canvas.toBlob(function(b) {
+            b.arrayBuffer().then(function(buf) {
+              resolve({
+                bytes: Array.from(new Uint8Array(buf)),
+                x: tile.x,
+                y: tile.y,
+                width: tile.width,
+                height: tile.height,
+                imageType: tile.imageType,
+                totalWidth: tile.totalWidth,
+                totalHeight: tile.totalHeight
+              });
+            });
+          }, tiles.mimeType, tiles.quality);
+        });
+      }
+      
+      function sendNextTile() {
+        if (currentTileIndex >= currentTiles.length) {
+          parent.postMessage({ pluginMessage: { type: 'finish-page' } }, '*');
+          return;
+        }
+        
+        showStatus('Page ' + (currentPageIndex + 1) + '/' + currentSitemap.pages.length + 
+                   ' - Tile ' + (currentTileIndex + 1) + '/' + currentTiles.length, 'loading');
+        
+        extractTile(currentTiles, currentTileIndex).then(function(tileData) {
+          parent.postMessage({ pluginMessage: { type: 'add-tile', tile: tileData } }, '*');
+        });
+      }
+      
+      function processNextPage() {
+        if (currentPageIndex >= currentSitemap.pages.length) {
+          parent.postMessage({ pluginMessage: { type: 'finalize' } }, '*');
+          return;
+        }
+        
+        var pg = currentSitemap.pages[currentPageIndex];
+        var siteSlug = currentSitemap.site.split('.')[0];
         var projectId = projectSelect.value;
-        var thumbW = parseInt(document.getElementById('imageSize').value, 10);
+        
+        showStatus('Loading page ' + (currentPageIndex + 1) + '/' + currentSitemap.pages.length + ': ' + pg.title, 'loading');
+        
+        var deskFile = pg.desktopFile || (siteSlug + '_' + pg.slug + '_desktop.png');
+        var mobFile = pg.mobileFile || (siteSlug + '_' + pg.slug + '_mobile.png');
+        
+        var deskPromise = fetch(serverUrl + '/api/projects/' + projectId + '/' + deskFile)
+          .then(function(r) { return r.ok ? r.blob() : null; })
+          .then(function(b) { return b ? processImage(b, thumbW, format, 'desktop') : null; })
+          .catch(function() { return null; });
+        
+        var mobPromise = fetch(serverUrl + '/api/projects/' + projectId + '/' + mobFile)
+          .then(function(r) { return r.ok ? r.blob() : null; })
+          .then(function(b) { return b ? processImage(b, Math.round(thumbW * 0.3), format, 'mobile') : null; })
+          .catch(function() { return null; });
+        
+        Promise.all([deskPromise, mobPromise]).then(function(results) {
+          var deskTiles = results[0];
+          var mobTiles = results[1];
+          
+          currentTiles = [];
+          if (deskTiles) {
+            currentTiles.img_desktop = deskTiles.img;
+            currentTiles.mimeType = deskTiles.mimeType;
+            currentTiles.quality = deskTiles.quality;
+            for (var i = 0; i < deskTiles.length; i++) {
+              var t = deskTiles[i];
+              t.tileSource = 'desktop';
+              currentTiles.push(t);
+            }
+          }
+          if (mobTiles) {
+            currentTiles.img_mobile = mobTiles.img;
+            if (!currentTiles.mimeType) {
+              currentTiles.mimeType = mobTiles.mimeType;
+              currentTiles.quality = mobTiles.quality;
+            }
+            for (var i = 0; i < mobTiles.length; i++) {
+              var t = mobTiles[i];
+              t.tileSource = 'mobile';
+              currentTiles.push(t);
+            }
+          }
+          
+          currentTiles.getImg = function(type) {
+            return type === 'mobile' ? currentTiles.img_mobile : currentTiles.img_desktop;
+          };
+          
+          if (currentTiles.length === 0) {
+            currentPageIndex++;
+            processNextPage();
+            return;
+          }
+          
+          currentTileIndex = 0;
+          
+          parent.postMessage({ 
+            pluginMessage: { 
+              type: 'start-page',
+              page: {
+                slug: pg.slug,
+                title: pg.title,
+                path: pg.path,
+                parent: pg.parent,
+                depth: pg.depth,
+                desktopWidth: deskTiles ? deskTiles[0].totalWidth : 0,
+                desktopHeight: deskTiles ? deskTiles[0].totalHeight : 0,
+                mobileWidth: mobTiles ? mobTiles[0].totalWidth : 0,
+                mobileHeight: mobTiles ? mobTiles[0].totalHeight : 0
+              },
+              pageIndex: currentPageIndex,
+              totalPages: currentSitemap.pages.length
+            } 
+          }, '*');
+        });
+      }
+      
+      generateBtn.addEventListener('click', function() {
+        var projectId = projectSelect.value;
+        thumbW = parseInt(document.getElementById('imageSize').value, 10);
+        format = document.getElementById('imageFormat').value;
         
         if (!projectId) {
           showStatus('Please select a project', 'error');
@@ -217,66 +453,44 @@
         generateBtn.disabled = true;
         showStatus('Fetching sitemap...', 'loading');
         
-        try {
-          var mapRes = await fetch(serverUrl + '/api/projects/' + projectId + '/sitemap.json');
-          if (!mapRes.ok) throw new Error('No sitemap.json');
-          var sitemap = await mapRes.json();
-          
-          showStatus('Loading images...', 'loading');
-          var pages = [];
-          var siteSlug = sitemap.site.split('.')[0];
-          
-          for (var i = 0; i < sitemap.pages.length; i++) {
-            var pg = sitemap.pages[i];
-            var deskFile = pg.desktopFile || (siteSlug + '_' + pg.slug + '_desktop.png');
-            var mobFile = pg.mobileFile || (siteSlug + '_' + pg.slug + '_mobile.png');
+        fetch(serverUrl + '/api/projects/' + projectId + '/sitemap.json')
+          .then(function(res) {
+            if (!res.ok) throw new Error('No sitemap.json');
+            return res.json();
+          })
+          .then(function(sitemap) {
+            currentSitemap = sitemap;
+            currentPageIndex = 0;
             
-            var deskData = null;
-            var mobData = null;
-            
-            try {
-              var dRes = await fetch(serverUrl + '/api/projects/' + projectId + '/' + deskFile);
-              if (dRes.ok) deskData = await splitImage(await dRes.blob(), thumbW);
-            } catch (e) {}
-            
-            try {
-              var mRes = await fetch(serverUrl + '/api/projects/' + projectId + '/' + mobFile);
-              if (mRes.ok) mobData = await splitImage(await mRes.blob(), Math.round(thumbW * 0.3));
-            } catch (e) {}
-            
-            if (deskData || mobData) {
-              pages.push({
-                slug: pg.slug,
-                title: pg.title,
-                path: pg.path,
-                parent: pg.parent,
-                depth: pg.depth,
-                desktopTiles: deskData ? deskData.tiles : null,
-                desktopWidth: deskData ? deskData.totalWidth : 0,
-                desktopHeight: deskData ? deskData.totalHeight : 0,
-                mobileTiles: mobData ? mobData.tiles : null,
-                mobileWidth: mobData ? mobData.totalWidth : 0,
-                mobileHeight: mobData ? mobData.totalHeight : 0
-              });
-            }
-            showStatus('Loaded ' + pages.length + '/' + sitemap.pages.length, 'loading');
-          }
-          
-          if (pages.length === 0) throw new Error('No images found');
-          
-          showStatus('Creating layout...', 'loading');
-          parent.postMessage({ pluginMessage: { type: 'create-sitemap', site: sitemap.site, pages: pages } }, '*');
-          
-        } catch (err) {
-          showStatus('Error: ' + err.message, 'error');
-          generateBtn.disabled = false;
-        }
+            parent.postMessage({ 
+              pluginMessage: { 
+                type: 'start',
+                site: sitemap.site,
+                total: sitemap.pages.length
+              } 
+            }, '*');
+          })
+          .catch(function(err) {
+            showStatus('Error: ' + err.message, 'error');
+            generateBtn.disabled = false;
+          });
       });
       
       window.onmessage = function(e) {
         var msg = e.data.pluginMessage;
         if (!msg) return;
-        if (msg.type === 'done') {
+        
+        if (msg.type === 'ready') {
+          processNextPage();
+        } else if (msg.type === 'page-ready') {
+          sendNextTile();
+        } else if (msg.type === 'tile-added') {
+          currentTileIndex++;
+          sendNextTile();
+        } else if (msg.type === 'page-done') {
+          currentPageIndex++;
+          processNextPage();
+        } else if (msg.type === 'done') {
           showStatus('Done! ' + msg.count + ' pages', 'success');
           generateBtn.disabled = false;
         } else if (msg.type === 'error') {
@@ -285,8 +499,8 @@
         }
       };
       
-      // Load projects on init
-      setTimeout(loadProjects, 100);
+      // Check connection on load
+      setTimeout(checkConnection, 100);
     })();
   </script>
 </body>
