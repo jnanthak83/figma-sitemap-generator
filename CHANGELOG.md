@@ -2,12 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2025-01-14
+
+### Changed
+- **Lighter Docker image** - Switched from Playwright base image to node:20-slim
+- **Improved Dockerfile** - Installs only required Playwright dependencies
+- **Removed deprecated version** from docker-compose.yml
+
+### Fixed
+- Docker build reliability issues
+
 ## [1.4.0] - 2025-01-14
 
 ### Added
 - **Tile-by-tile image loading** - Sends one tile at a time to prevent Figma memory crashes
+- **Connection state UI** - Plugin shows server status with connected/disconnected states
+- **"Open Server UI" button** - Quick link to start server when disconnected
+- **Quick start instructions** - Shows how to start server in plugin UI
 - **Project viewer** - "View" button opens captured files in browser with thumbnail gallery
 - **Timestamp in project names** - Projects now show date + time for easy differentiation
+- **Docker support** - Dockerfile and docker-compose.yml for containerized deployment
 
 ### Changed
 - Removed capture size option from web app - always captures at max 4K resolution

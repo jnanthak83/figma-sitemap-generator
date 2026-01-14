@@ -1,6 +1,6 @@
 {
   "name": "sitemap-capture-server",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Desktop app to capture full-page 4K screenshots for Figma sitemap generation",
   "main": "app.js",
   "scripts": {
