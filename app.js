@@ -674,30 +674,10 @@ function getWebUI() {
     
     // Preset rubrics
     const PRESETS = {
-      ux: `- Check navigation accessibility and clarity
-- Evaluate visual hierarchy and content flow
-- Assess mobile responsiveness and touch targets
-- Look for consistent interaction patterns
-- Check form usability and error handling
-- Verify loading states and feedback`,
-      conversion: `- Check if primary CTA is above the fold
-- Evaluate trust signals (logos, testimonials, badges)
-- Assess pricing transparency and clarity
-- Look for friction points in user journey
-- Check urgency and scarcity elements
-- Verify value proposition clarity`,
-      accessibility: `- Check color contrast ratios
-- Evaluate form label associations
-- Assess keyboard navigation support
-- Look for alt text on images
-- Check heading hierarchy (single H1)
-- Verify focus states visibility`,
-      seo: `- Check page title optimization (50-60 chars)
-- Evaluate meta description presence
-- Assess heading structure (H1, H2, H3)
-- Look for internal linking
-- Check image alt attributes
-- Verify URL structure clarity`
+      ux: '- Check navigation accessibility and clarity\n- Evaluate visual hierarchy and content flow\n- Assess mobile responsiveness and touch targets\n- Look for consistent interaction patterns\n- Check form usability and error handling\n- Verify loading states and feedback',
+      conversion: '- Check if primary CTA is above the fold\n- Evaluate trust signals (logos, testimonials, badges)\n- Assess pricing transparency and clarity\n- Look for friction points in user journey\n- Check urgency and scarcity elements\n- Verify value proposition clarity',
+      accessibility: '- Check color contrast ratios\n- Evaluate form label associations\n- Assess keyboard navigation support\n- Look for alt text on images\n- Check heading hierarchy (single H1)\n- Verify focus states visibility',
+      seo: '- Check page title optimization (50-60 chars)\n- Evaluate meta description presence\n- Assess heading structure (H1, H2, H3)\n- Look for internal linking\n- Check image alt attributes\n- Verify URL structure clarity'
     };
     
     function setPreset(preset) {
