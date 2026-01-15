@@ -631,7 +631,7 @@ function getWebUI() {
             <button class="preset-btn" onclick="setPreset('seo')">SEO</button>
             <button class="preset-btn" onclick="setPreset('clear')">Clear</button>
           </div>
-          <textarea id="rubric" rows="5" placeholder="Enter custom evaluation criteria, one per line...\n- Check if primary CTA is above the fold\n- Evaluate trust signals"></textarea>
+          <textarea id="rubric" rows="5" placeholder="Enter custom evaluation criteria, one per line. Example: Check if primary CTA is above the fold"></textarea>
           <p class="hint">AI will evaluate pages against these criteria and generate insights</p>
         </div>
         
