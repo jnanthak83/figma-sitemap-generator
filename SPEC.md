@@ -458,12 +458,13 @@ User-provided text, one criterion per line:
 - [x] Add "Add Competitor" input field (disabled/placeholder for now)
 - [x] Save rubric to project config (sitemap.json)
 
-### Phase 4: Figma Plugin — Annotation Panel ⬜ TODO
-- [ ] Update `code.js` to fetch `analysis.json` alongside `sitemap.json`
-- [ ] Draw numbered hotspot markers on screenshots at element positions
+### Phase 4: Figma Plugin — Annotation Panel ✅ DONE
+- [x] Update `code.js` to fetch `analysis.json` alongside `sitemap.json`
+- [x] Draw numbered hotspot markers on screenshots at element positions
+- [x] Color-code markers by severity (🟢 good, 🟡 warning, 🔴 issue)
+- [x] Auto-run analysis after capture when rubric or elements present
 - [ ] Create collapsible side panel per card showing insights list
 - [ ] Click hotspot → highlight corresponding insight in panel
-- [ ] Color-code markers by severity (🟢 good, 🟡 warning, 🔴 issue)
 
 ### Phase 5: API Updates ⬜ TODO
 - [ ] `POST /api/projects/:id/analyze` — trigger analysis with rubric
