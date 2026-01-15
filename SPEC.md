@@ -446,11 +446,11 @@ User-provided text, one criterion per line:
 - [x] Store as `elements[]` array in sitemap.json with `{type, text, x, y, width, height, viewport}`
 - [x] Normalize coordinates relative to full-page screenshot dimensions
 
-### Phase 2: Analyzer — Custom Rubric Support ⬜ TODO
-- [ ] Add `rubric` field to analysis config
-- [ ] Update `/workers/analyzer.js` to include rubric in LLM prompt
-- [ ] Generate insights that reference specific elements by ID
-- [ ] Output: `insights[]` with `{id, elementRef, severity, message, suggestion}`
+### Phase 2: Analyzer — Custom Rubric Support ✅ DONE
+- [x] Add `rubric` field to analysis config
+- [x] Update `/workers/analyzer.js` to include rubric in LLM prompt
+- [x] Generate insights that reference specific elements by ID
+- [x] Output: `insights[]` with `{id, elementRef, severity, message, suggestion}`
 
 ### Phase 3: Web UI — Rubric Input & Competitor Field ⬜ TODO
 - [ ] Add "Analysis Rubric" textarea to capture form
