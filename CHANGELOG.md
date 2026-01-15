@@ -25,6 +25,12 @@ All notable changes to this project will be documented in this file.
 - `createBasicAnalysis()` now generates 10-15 insights with element references
 - Increased LLM token limit to 3000 for larger insight arrays
 
+- **Phase 3: Web UI Rubric Input**
+  - Analysis Rubric textarea in capture form
+  - Preset buttons: UX Audit, Conversion, Accessibility, SEO
+  - Add Competitor field (disabled placeholder for future)
+  - Rubric saved to sitemap.json for later analysis
+
 ## [2.0.1] - 2025-01-14
 
 ### Added

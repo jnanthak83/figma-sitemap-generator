@@ -318,7 +318,8 @@ app.post('/api/capture', async (req, res) => {
   const config = {
     desktop: options.desktop !== false,
     mobile: options.mobile !== false,
-    scrollDelay: options.scrollDelay || 150
+    scrollDelay: options.scrollDelay || 150,
+    rubric: options.rubric || null
   };
   
   const pages = useDiscovered ? captureSession.pages : [];
@@ -459,13 +460,14 @@ async function runParallelCapture(baseUrl, config, projectId, projectDir) {
     coordinator.pool.off('job:failed', onFailed);
   }
   
-  // Save sitemap.json with timing info
+  // Save sitemap.json with timing info and rubric
   const now = new Date();
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const sitemap = {
     site: captureSession.site,
     captured_at: now.toISOString().split('T')[0],
     captured_at_time: now.toTimeString().slice(0, 5),
+    rubric: captureSession.config?.rubric || null,
     pages: pages,
     timing: {
       total: elapsed + 's',
@@ -619,6 +621,26 @@ function getWebUI() {
             <p class="hint">Time to wait for lazy-loaded content</p>
           </div>
         </div>
+        
+        <div class="section-divider">
+          <label>Analysis Rubric <span style="font-weight:normal;color:#888;">(optional)</span></label>
+          <div class="preset-btns">
+            <button class="preset-btn" onclick="setPreset('ux')">UX Audit</button>
+            <button class="preset-btn" onclick="setPreset('conversion')">Conversion</button>
+            <button class="preset-btn" onclick="setPreset('accessibility')">Accessibility</button>
+            <button class="preset-btn" onclick="setPreset('seo')">SEO</button>
+            <button class="preset-btn" onclick="setPreset('clear')">Clear</button>
+          </div>
+          <textarea id="rubric" rows="5" placeholder="Enter custom evaluation criteria, one per line...\n- Check if primary CTA is above the fold\n- Evaluate trust signals"></textarea>
+          <p class="hint">AI will evaluate pages against these criteria and generate insights</p>
+        </div>
+        
+        <div class="section-divider disabled-field">
+          <label>Add Competitor <span class="coming-soon">Coming soon</span></label>
+          <input type="text" id="competitor" placeholder="https://competitor.com" disabled>
+          <p class="hint">Compare your site against competitors</p>
+        </div>
+        
         <div class="btn-row">
           <button id="captureBtn" onclick="startCapture()">📸 Start Capture</button>
         </div>
@@ -649,6 +671,47 @@ function getWebUI() {
   <script>
     let pollInterval;
     let discoveredPages = [];
+    
+    // Preset rubrics
+    const PRESETS = {
+      ux: `- Check navigation accessibility and clarity
+- Evaluate visual hierarchy and content flow
+- Assess mobile responsiveness and touch targets
+- Look for consistent interaction patterns
+- Check form usability and error handling
+- Verify loading states and feedback`,
+      conversion: `- Check if primary CTA is above the fold
+- Evaluate trust signals (logos, testimonials, badges)
+- Assess pricing transparency and clarity
+- Look for friction points in user journey
+- Check urgency and scarcity elements
+- Verify value proposition clarity`,
+      accessibility: `- Check color contrast ratios
+- Evaluate form label associations
+- Assess keyboard navigation support
+- Look for alt text on images
+- Check heading hierarchy (single H1)
+- Verify focus states visibility`,
+      seo: `- Check page title optimization (50-60 chars)
+- Evaluate meta description presence
+- Assess heading structure (H1, H2, H3)
+- Look for internal linking
+- Check image alt attributes
+- Verify URL structure clarity`
+    };
+    
+    function setPreset(preset) {
+      const textarea = document.getElementById('rubric');
+      const btns = document.querySelectorAll('.preset-btn');
+      btns.forEach(b => b.classList.remove('active'));
+      
+      if (preset === 'clear') {
+        textarea.value = '';
+      } else if (PRESETS[preset]) {
+        textarea.value = PRESETS[preset];
+        event.target.classList.add('active');
+      }
+    }
     
     function showTab(tab) {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -767,6 +830,7 @@ function getWebUI() {
       document.getElementById('figmaCard').style.display = 'none';
       
       const url = document.getElementById('url').value.trim();
+      const rubric = document.getElementById('rubric').value.trim();
       
       await fetch('/api/capture', {
         method: 'POST',
@@ -776,7 +840,8 @@ function getWebUI() {
           options: {
             desktop: document.getElementById('desktop').checked,
             mobile: document.getElementById('mobile').checked,
-            scrollDelay: parseInt(document.getElementById('scrollDelay').value)
+            scrollDelay: parseInt(document.getElementById('scrollDelay').value),
+            rubric: rubric || null
           }
         })
       });

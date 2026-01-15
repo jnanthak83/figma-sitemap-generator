@@ -452,11 +452,11 @@ User-provided text, one criterion per line:
 - [x] Generate insights that reference specific elements by ID
 - [x] Output: `insights[]` with `{id, elementRef, severity, message, suggestion}`
 
-### Phase 3: Web UI — Rubric Input & Competitor Field ⬜ TODO
-- [ ] Add "Analysis Rubric" textarea to capture form
-- [ ] Add preset buttons (UX Audit, Conversion, Accessibility) that populate rubric
-- [ ] Add "Add Competitor" input field (disabled/placeholder for now)
-- [ ] Save rubric to project config
+### Phase 3: Web UI — Rubric Input & Competitor Field ✅ DONE
+- [x] Add "Analysis Rubric" textarea to capture form
+- [x] Add preset buttons (UX Audit, Conversion, Accessibility, SEO) that populate rubric
+- [x] Add "Add Competitor" input field (disabled/placeholder for now)
+- [x] Save rubric to project config (sitemap.json)
 
 ### Phase 4: Figma Plugin — Annotation Panel ⬜ TODO
 - [ ] Update `code.js` to fetch `analysis.json` alongside `sitemap.json`
