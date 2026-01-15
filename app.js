@@ -1,13 +1,18 @@
 /**
- * Sitemap Capture Server
- * Desktop app for capturing full-page screenshots
+ * Sitemap Analyzer Server v2.0
+ * Parallel capture + AI analysis with worker pool
  */
 
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { chromium } = require('playwright');
+
+// Worker pool imports
+const { Coordinator } = require('./workers/coordinator');
+const { scanPage, discoverPages, closeBrowser } = require('./workers/scanner');
+const { analyzePage, setLLMConfig, getLLMConfig } = require('./workers/analyzer');
+const { synthesize } = require('./workers/synthesizer');
 
 const app = express();
 app.use(cors());
@@ -20,6 +25,26 @@ if (!fs.existsSync(BASE_DIR)) {
   fs.mkdirSync(BASE_DIR, { recursive: true });
 }
 
+// Initialize coordinator
+const coordinator = new Coordinator({
+  capturesDir: BASE_DIR,
+  poolConfig: {
+    scan: { concurrency: 4, timeout: 60000, retries: 2 },
+    analyze: { concurrency: 2, timeout: 120000, retries: 1 },
+    synthesize: { concurrency: 1, timeout: 300000, retries: 1 },
+    discover: { concurrency: 2, timeout: 30000, retries: 1 }
+  }
+});
+
+// Register worker handlers
+coordinator.registerHandlers({
+  discover: discoverPages,
+  scan: scanPage,
+  analyze: analyzePage,
+  synthesize: synthesize
+});
+
+// Legacy session for backward compatibility
 let captureSession = {
   project: null,
   site: null,
@@ -31,6 +56,7 @@ let captureSession = {
   error: null
 };
 
+// Static files
 app.use('/captures', express.static(BASE_DIR));
 
 // Directory listing for captures
@@ -65,33 +91,101 @@ ${files.filter(f => f.endsWith('.png')).map(f => '<a href="/captures/' + req.par
   res.send(html);
 });
 
+// Web UI
 app.get('/', (req, res) => {
   res.send(getWebUI());
 });
+
+// ============================================
+// NEW v2.0 API ENDPOINTS
+// ============================================
+
+// Create project with multiple sites
+app.post('/api/projects', async (req, res) => {
+  try {
+    const { sites, config = {} } = req.body;
+    
+    if (!sites || !Array.isArray(sites) || sites.length === 0) {
+      return res.status(400).json({ error: 'sites[] required' });
+    }
+    
+    const sitesList = sites.map(s => typeof s === 'string' ? { url: s } : s);
+    
+    const project = await coordinator.createProject({
+      sites: sitesList,
+      ...config
+    });
+    
+    res.json(project);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get project status with detailed progress
+app.get('/api/projects/:projectId/status', (req, res) => {
+  const status = coordinator.getProjectStatus(req.params.projectId);
+  if (!status) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  res.json(status);
+});
+
+// Start discovery for project
+app.post('/api/projects/:projectId/discover', async (req, res) => {
+  try {
+    const project = await coordinator.startDiscovery(req.params.projectId);
+    res.json({ status: 'started', project });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get worker pool status
+app.get('/api/queue/status', (req, res) => {
+  res.json(coordinator.getPoolStatus());
+});
+
+// Configure LLM
+app.post('/api/config/llm', (req, res) => {
+  const { provider, model, endpoint, apiKey } = req.body;
+  setLLMConfig({ provider, model, endpoint, apiKey });
+  res.json(getLLMConfig());
+});
+
+app.get('/api/config/llm', (req, res) => {
+  res.json(getLLMConfig());
+});
+
+// ============================================
+// LEGACY v1.x API ENDPOINTS (backward compatible)
+// ============================================
 
 app.get('/api/status', (req, res) => {
   res.json(captureSession);
 });
 
-app.get('/api/projects', (req, res) => {
-  const projects = [];
+app.get('/api/projects', async (req, res) => {
+  const projects = await coordinator.getAllProjects();
   
+  // Also check old-style projects
+  const legacyProjects = [];
   if (fs.existsSync(BASE_DIR)) {
     const folders = fs.readdirSync(BASE_DIR, { withFileTypes: true });
     
     for (const folder of folders) {
-      if (folder.isDirectory()) {
+      if (folder.isDirectory() && !folder.name.startsWith('proj_')) {
         const sitemapPath = path.join(BASE_DIR, folder.name, 'sitemap.json');
         if (fs.existsSync(sitemapPath)) {
           try {
             const sitemap = JSON.parse(fs.readFileSync(sitemapPath, 'utf8'));
-            projects.push({
+            legacyProjects.push({
               id: folder.name,
               site: sitemap.site,
               captured_at: sitemap.captured_at,
               captured_at_time: sitemap.captured_at_time || '',
               pageCount: sitemap.pages.length,
-              captureSize: sitemap.captureSize || 'unknown'
+              version: 'v1'
             });
           } catch (e) {}
         }
@@ -99,11 +193,43 @@ app.get('/api/projects', (req, res) => {
     }
   }
   
-  projects.sort((a, b) => new Date(b.captured_at) - new Date(a.captured_at));
-  res.json(projects);
+  // Merge and format
+  const allProjects = [
+    ...projects.map(p => ({
+      id: p.id,
+      site: p.sites?.[0]?.url || 'Unknown',
+      captured_at: p.created_at?.split('T')[0],
+      captured_at_time: p.created_at?.split('T')[1]?.slice(0, 5) || '',
+      pageCount: p.sites?.reduce((sum, s) => sum + (s.pagesFound || 0), 0) || 0,
+      status: p.status,
+      version: 'v2'
+    })),
+    ...legacyProjects
+  ];
+  
+  allProjects.sort((a, b) => new Date(b.captured_at) - new Date(a.captured_at));
+  res.json(allProjects);
 });
 
 app.get('/api/projects/:projectId/sitemap.json', (req, res) => {
+  // Check for v2 project first
+  const projectDir = path.join(BASE_DIR, req.params.projectId);
+  
+  // Try v2 structure (with site subdirectories)
+  if (fs.existsSync(projectDir)) {
+    const subdirs = fs.readdirSync(projectDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name.startsWith('site_'));
+    
+    if (subdirs.length > 0) {
+      // Return first site's sitemap (primary)
+      const sitemapPath = path.join(projectDir, subdirs[0].name, 'sitemap.json');
+      if (fs.existsSync(sitemapPath)) {
+        return res.sendFile(sitemapPath);
+      }
+    }
+  }
+  
+  // Legacy v1 structure
   const sitemapPath = path.join(BASE_DIR, req.params.projectId, 'sitemap.json');
   if (fs.existsSync(sitemapPath)) {
     res.sendFile(sitemapPath);
@@ -131,31 +257,7 @@ app.delete('/api/projects/:projectId', (req, res) => {
   }
 });
 
-app.get('/sitemap.json', (req, res) => {
-  if (!captureSession.project) {
-    return res.status(404).json({ error: 'No capture session' });
-  }
-  const sitemapPath = path.join(BASE_DIR, captureSession.project, 'sitemap.json');
-  if (fs.existsSync(sitemapPath)) {
-    res.sendFile(sitemapPath);
-  } else {
-    res.status(404).json({ error: 'No sitemap found' });
-  }
-});
-
-app.get('/:filename', (req, res) => {
-  if (!captureSession.project) {
-    return res.status(404).send('No capture session');
-  }
-  const filepath = path.join(BASE_DIR, captureSession.project, req.params.filename);
-  if (fs.existsSync(filepath)) {
-    res.sendFile(filepath);
-  } else {
-    res.status(404).send('Not found');
-  }
-});
-
-// Discover pages (crawl only, no capture)
+// Legacy discover (single site)
 app.post('/api/discover', async (req, res) => {
   const { url, options = {} } = req.body;
   
@@ -164,8 +266,6 @@ app.post('/api/discover', async (req, res) => {
   }
   
   const hostname = new URL(url).hostname;
-  const maxDepth = options.maxDepth || 3;
-  const maxPages = options.maxPages || 50;
   
   captureSession = {
     project: null,
@@ -178,14 +278,18 @@ app.post('/api/discover', async (req, res) => {
   };
   
   try {
-    const browser = await chromium.launch();
-    const pages = await crawlNavigation(browser, url, new URL(url).origin, maxPages, maxDepth);
-    await browser.close();
+    const result = await discoverPages({
+      site: url,
+      options: {
+        maxDepth: options.maxDepth || 3,
+        maxPages: options.maxPages || 50
+      }
+    });
     
-    captureSession.pages = pages;
+    captureSession.pages = result.pages;
     captureSession.status = 'discovered';
     
-    res.json({ success: true, pages });
+    res.json({ success: true, pages: result.pages });
   } catch (err) {
     captureSession.status = 'error';
     captureSession.error = err.message;
@@ -193,11 +297,10 @@ app.post('/api/discover', async (req, res) => {
   }
 });
 
-// Start capture (after discovery)
+// Capture endpoint - now uses PARALLEL worker pool
 app.post('/api/capture', async (req, res) => {
   const { url, options = {} } = req.body;
   
-  // If pages already discovered, use those
   const useDiscovered = captureSession.status === 'discovered' && captureSession.pages.length > 0;
   
   if (!url && !useDiscovered) {
@@ -212,17 +315,12 @@ app.post('/api/capture', async (req, res) => {
   
   fs.mkdirSync(projectDir, { recursive: true });
   
-  const captureSize = options.captureSize || 500;
-  
   const config = {
     desktop: options.desktop !== false,
     mobile: options.mobile !== false,
-    captureSize: captureSize,
-    scrollDelay: options.scrollDelay || 150,
-    ...options
+    scrollDelay: options.scrollDelay || 150
   };
   
-  // Mark all pages as pending
   const pages = useDiscovered ? captureSession.pages : [];
   pages.forEach(p => { p.status = 'pending'; });
   
@@ -242,240 +340,155 @@ app.post('/api/capture', async (req, res) => {
   
   res.json({ status: 'started', projectId, config });
   
-  runCapture(baseUrl, config, projectId, projectDir).catch(err => {
+  // Run PARALLEL capture using worker pool
+  runParallelCapture(baseUrl, config, projectId, projectDir).catch(err => {
     captureSession.status = 'error';
     captureSession.error = err.message;
     console.error('Capture error:', err);
   });
 });
 
-async function runCapture(baseUrl, config, projectId, projectDir) {
-  const browser = await chromium.launch();
+// Parallel capture using worker pool (4x faster than sequential)
+async function runParallelCapture(baseUrl, config, projectId, projectDir) {
+  const startTime = Date.now();
   const siteSlug = new URL(baseUrl).hostname.split('.')[0];
+  const pages = captureSession.pages;
+  const totalPages = pages.length;
+  let completedJobs = 0;
   
-  try {
-    const pages = captureSession.pages;
-    const totalCaptures = pages.length * ((config.desktop ? 1 : 0) + (config.mobile ? 1 : 0));
-    let completed = 0;
+  console.log(`\n🚀 Parallel capture: ${totalPages} pages with ${coordinator.pool.config.scan.concurrency} workers`);
+  
+  // Track job results
+  const jobResults = new Map();
+  
+  // Event handlers for progress tracking
+  const onComplete = (job) => {
+    if (job.payload?.projectId !== projectId || job.type !== 'scan') return;
     
-    // Capture at 4K (1920 viewport × 2x scale = 3840px output)
-    const desktopViewport = 1920;
-    const mobileViewport = 390;
-    const deviceScale = 2;
+    completedJobs++;
+    const pagePath = job.payload.page.path;
+    jobResults.set(pagePath, job.result);
     
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      const pageUrl = `${baseUrl}${page.path}`;
-      
-      page.status = 'capturing';
-      captureSession.currentPage = page.slug;
-      
-      // Desktop
-      if (config.desktop) {
-        captureSession.currentViewport = 'desktop';
-        const filename = `${siteSlug}_${page.slug}_desktop.png`;
-        const success = await captureScreenshot(browser, {
-          url: pageUrl,
-          viewport: { width: desktopViewport, height: 1080 },
-          scale: deviceScale,
-          isMobile: false,
-          outputPath: path.join(projectDir, filename),
-          scrollDelay: config.scrollDelay
-        });
-        
-        if (success) {
-          page.desktopFile = filename;
-          console.log(`✓ ${page.slug} desktop`);
-        } else {
-          console.log(`✗ ${page.slug} desktop (skipped)`);
-        }
-        
-        completed++;
-        captureSession.progress = Math.round((completed / totalCaptures) * 100);
-      }
-      
-      // Mobile
-      if (config.mobile) {
-        captureSession.currentViewport = 'mobile';
-        const filename = `${siteSlug}_${page.slug}_mobile.png`;
-        const success = await captureScreenshot(browser, {
-          url: pageUrl,
-          viewport: { width: mobileViewport, height: 844 },
-          scale: deviceScale,
-          isMobile: true,
-          outputPath: path.join(projectDir, filename),
-          scrollDelay: config.scrollDelay
-        });
-        
-        if (success) {
-          page.mobileFile = filename;
-          console.log(`✓ ${page.slug} mobile`);
-        } else {
-          console.log(`✗ ${page.slug} mobile (skipped)`);
-        }
-        
-        completed++;
-        captureSession.progress = Math.round((completed / totalCaptures) * 100);
-      }
-      
+    // Find and update page
+    const page = pages.find(p => p.path === pagePath);
+    if (page && job.result) {
       page.status = 'done';
+      
+      // Copy screenshots to project directory
+      if (job.result.screenshots?.desktop) {
+        const filename = `${siteSlug}_${page.slug}_desktop.png`;
+        try {
+          fs.copyFileSync(job.result.screenshots.desktop, path.join(projectDir, filename));
+          page.desktopFile = filename;
+        } catch (e) { console.error(`Copy error: ${e.message}`); }
+      }
+      
+      if (job.result.screenshots?.mobile) {
+        const filename = `${siteSlug}_${page.slug}_mobile.png`;
+        try {
+          fs.copyFileSync(job.result.screenshots.mobile, path.join(projectDir, filename));
+          page.mobileFile = filename;
+        } catch (e) { console.error(`Copy error: ${e.message}`); }
+      }
+      
+      if (job.result.extracted) {
+        page.extracted = job.result.extracted;
+      }
+      
+      // Save element positions for annotations
+      if (job.result.elements && job.result.elements.length > 0) {
+        page.elements = job.result.elements;
+      }
+      
+      console.log(`✓ [${completedJobs}/${totalPages}] ${page.slug} (${job.result.elements?.length || 0} elements)`);
     }
     
-    // Save sitemap.json
-    const now = new Date();
-    const sitemap = {
-      site: captureSession.site,
-      captured_at: now.toISOString().split('T')[0],
-      captured_at_time: now.toTimeString().slice(0, 5),
-      captureSize: config.captureSize,
-      pages: pages
-    };
-    fs.writeFileSync(path.join(projectDir, 'sitemap.json'), JSON.stringify(sitemap, null, 2));
-    
-    captureSession.status = 'done';
-    captureSession.progress = 100;
-    captureSession.currentPage = null;
-    captureSession.currentViewport = null;
-    
-  } finally {
-    await browser.close();
-  }
-}
-
-async function warmUpScroll(page, scrollDelay) {
-  await page.evaluate(async (delay) => {
-    const scrollHeight = Math.max(
-      document.body.scrollHeight,
-      document.documentElement.scrollHeight
-    );
-    const viewportHeight = window.innerHeight;
-    const scrollStep = viewportHeight - 200;
-    
-    let currentPos = 0;
-    while (currentPos < scrollHeight) {
-      window.scrollTo(0, currentPos);
-      await new Promise(r => setTimeout(r, delay));
-      currentPos += scrollStep;
-    }
-    
-    window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, delay));
-  }, scrollDelay);
-}
-
-async function captureScreenshot(browser, { url, viewport, scale, isMobile, outputPath, scrollDelay }) {
-  const context = await browser.newContext({
-    viewport,
-    deviceScaleFactor: scale,
-    isMobile
-  });
+    // Update progress
+    captureSession.progress = Math.round((completedJobs / totalPages) * 100);
+    captureSession.currentPage = page?.slug;
+  };
   
-  const page = await context.newPage();
+  const onFailed = (job, error) => {
+    if (job.payload?.projectId !== projectId || job.type !== 'scan') return;
+    
+    completedJobs++;
+    const page = pages.find(p => p.path === job.payload.page.path);
+    if (page) {
+      page.status = 'error';
+      console.error(`✗ ${page.slug}: ${error.message}`);
+    }
+    captureSession.progress = Math.round((completedJobs / totalPages) * 100);
+  };
+  
+  // Subscribe to events
+  coordinator.pool.on('job:complete', onComplete);
+  coordinator.pool.on('job:failed', onFailed);
   
   try {
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded',
-      timeout: 15000
-    });
+    // Queue ALL pages for parallel processing
+    for (const page of pages) {
+      page.status = 'queued';
+      coordinator.pool.addJob('scan', {
+        projectId,
+        site: baseUrl,
+        page: {
+          url: `${baseUrl}${page.path}`,
+          path: page.path,
+          title: page.title,
+          depth: page.depth,
+          parent: page.parent,
+          slug: page.slug
+        },
+        options: {
+          captureDesktop: config.desktop,
+          captureMobile: config.mobile,
+          scrollDelay: config.scrollDelay
+        }
+      }, { priority: page.depth }); // Higher depth = lower priority
+    }
     
-    await page.waitForTimeout(500);
-    await warmUpScroll(page, scrollDelay);
-    await page.waitForTimeout(300);
+    // Wait for all scan jobs to complete
+    await coordinator.pool.waitForType(projectId, 'scan');
     
-    await page.screenshot({
-      path: outputPath,
-      fullPage: true
-    });
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`\n✨ Complete: ${totalPages} pages in ${elapsed}s (${(elapsed / totalPages).toFixed(2)}s/page)\n`);
     
-    return true;
-    
-  } catch (err) {
-    console.error(`Error on ${url}: ${err.message}`);
-    return false;
   } finally {
-    await context.close();
-  }
-}
-
-async function crawlNavigation(browser, startUrl, baseUrl, maxPages, maxDepth) {
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  
-  await page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-  
-  const links = await page.evaluate((baseUrl) => {
-    const navLinks = [];
-    const seen = new Set();
-    
-    const navSelectors = [
-      'nav a[href]',
-      'header a[href]',
-      '[role="navigation"] a[href]',
-      '.nav a[href]',
-      '.menu a[href]',
-      '.navigation a[href]'
-    ];
-    
-    for (const selector of navSelectors) {
-      document.querySelectorAll(selector).forEach(a => {
-        try {
-          const href = a.href;
-          const url = new URL(href);
-          
-          if (url.origin !== baseUrl) return;
-          if (url.pathname === '' || href.startsWith('javascript:')) return;
-          
-          const path = url.pathname;
-          if (seen.has(path)) return;
-          seen.add(path);
-          
-          const title = a.textContent.trim() || path;
-          navLinks.push({ path, title });
-        } catch (e) {}
-      });
-    }
-    
-    return navLinks;
-  }, baseUrl);
-  
-  await context.close();
-  
-  const pages = [];
-  const slugMap = new Map();
-  
-  pages.push({ slug: 'home', title: 'Home', path: '/', parent: null, depth: 0, status: 'pending' });
-  slugMap.set('/', 'home');
-  
-  for (const link of links.slice(0, maxPages - 1)) {
-    if (link.path === '/') continue;
-    
-    const pathParts = link.path.split('/').filter(Boolean);
-    const slug = pathParts.join('-') || link.path.replace(/[^a-z0-9]/gi, '-');
-    const depth = pathParts.length;
-    
-    // Filter by maxDepth
-    if (depth > maxDepth) continue;
-    
-    let parent = 'home';
-    if (depth > 1) {
-      const parentPath = '/' + pathParts.slice(0, -1).join('/');
-      parent = slugMap.get(parentPath) || 'home';
-    }
-    
-    if (!slugMap.has(link.path)) {
-      slugMap.set(link.path, slug);
-      pages.push({ slug, title: link.title, path: link.path, parent, depth, status: 'pending' });
-    }
+    // Cleanup event listeners
+    coordinator.pool.off('job:complete', onComplete);
+    coordinator.pool.off('job:failed', onFailed);
   }
   
-  return pages;
+  // Save sitemap.json with timing info
+  const now = new Date();
+  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  const sitemap = {
+    site: captureSession.site,
+    captured_at: now.toISOString().split('T')[0],
+    captured_at_time: now.toTimeString().slice(0, 5),
+    pages: pages,
+    timing: {
+      total: elapsed + 's',
+      mode: 'parallel',
+      workers: coordinator.pool.config.scan.concurrency
+    }
+  };
+  fs.writeFileSync(path.join(projectDir, 'sitemap.json'), JSON.stringify(sitemap, null, 2));
+  
+  captureSession.status = 'done';
+  captureSession.progress = 100;
+  captureSession.currentPage = null;
+  captureSession.currentViewport = null;
+  
+  await closeBrowser();
 }
 
+// Web UI
 function getWebUI() {
   return `<!DOCTYPE html>
 <html>
 <head>
-  <title>Sitemap Capture</title>
+  <title>Sitemap Analyzer</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; min-height: 100vh; padding: 40px; }
@@ -499,7 +512,7 @@ function getWebUI() {
     .btn-secondary:hover { background: #e0e0e0; }
     .btn-danger { background: #dc3545; }
     .btn-danger:hover { background: #c82333; }
-    .btn-small { padding: 6px 12px; font-size: 12px; text-decoration: none; border-radius: 6px; }
+    .btn-small { padding: 6px 12px; font-size: 12px; text-decoration: none; border-radius: 6px; display: inline-block; }
     .btn-row { display: flex; gap: 12px; }
     .btn-row button { flex: 1; }
     .progress-bar { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-bottom: 12px; }
@@ -539,12 +552,15 @@ function getWebUI() {
     .tab-content.active { display: block; }
     .summary { background: #f9f9f9; padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
     .summary strong { color: #333; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
+    .badge.v1 { background: #eee; color: #666; }
+    .badge.v2 { background: #d4edda; color: #155724; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>📸 Sitemap Capture</h1>
-    <p class="subtitle">Capture full-page screenshots for Figma sitemap generation</p>
+    <h1>🔍 Sitemap Analyzer</h1>
+    <p class="subtitle">Capture & analyze websites with AI-powered insights</p>
     
     <div class="tabs">
       <button class="tab active" onclick="showTab('capture')">New Capture</button>
@@ -584,8 +600,8 @@ function getWebUI() {
       <div class="card" id="captureCard" style="display: none;">
         <h2>3. Configure & Capture</h2>
         <div class="checkbox-row">
-          <label><input type="checkbox" id="desktop" checked> Desktop (1920×2x = 3840px)</label>
-          <label><input type="checkbox" id="mobile" checked> Mobile (390×2x = 780px)</label>
+          <label><input type="checkbox" id="desktop" checked> Desktop (3840px)</label>
+          <label><input type="checkbox" id="mobile" checked> Mobile (780px)</label>
         </div>
         <div class="row">
           <div>
@@ -648,8 +664,8 @@ function getWebUI() {
       container.innerHTML = projects.map(p => 
         '<div class="project-item">' +
           '<div class="project-info">' +
-            '<h3>' + p.site + '</h3>' +
-            '<p>' + p.pageCount + ' pages • ' + p.captured_at + ' ' + (p.captured_at_time || '') + '</p>' +
+            '<h3>' + p.site + ' <span class="badge ' + (p.version || 'v1') + '">' + (p.version || 'v1') + '</span></h3>' +
+            '<p>' + (p.pageCount || 0) + ' pages • ' + p.captured_at + ' ' + (p.captured_at_time || '') + '</p>' +
           '</div>' +
           '<div class="project-actions">' +
             '<a class="btn-small btn-secondary" href="/captures/' + p.id + '/" target="_blank">View</a>' +
@@ -695,7 +711,6 @@ function getWebUI() {
           document.getElementById('pagesCard').style.display = 'block';
           document.getElementById('captureCard').style.display = 'block';
           
-          // Summary by depth
           const byDepth = {};
           discoveredPages.forEach(p => {
             byDepth[p.depth] = (byDepth[p.depth] || 0) + 1;
@@ -775,7 +790,7 @@ function getWebUI() {
         }
         statusEl.textContent = text;
       } else if (data.status === 'done') {
-        statusEl.textContent = '✓ Done! ' + data.pages.length + ' pages saved';
+        statusEl.textContent = '✓ Done! ' + data.pages.length + ' pages captured';
         clearInterval(pollInterval);
         document.getElementById('captureBtn').disabled = false;
         document.getElementById('figmaCard').style.display = 'block';
@@ -785,7 +800,6 @@ function getWebUI() {
         document.getElementById('captureBtn').disabled = false;
       }
       
-      // Update pages list with status
       if (data.pages?.length) {
         renderPagesList(data.pages);
       }
@@ -797,6 +811,14 @@ function getWebUI() {
 </html>`;
 }
 
+// Cleanup on exit
+process.on('SIGINT', async () => {
+  console.log('\\nShutting down...');
+  await closeBrowser();
+  process.exit();
+});
+
 app.listen(PORT, () => {
-  console.log('\\n🚀 Sitemap Capture Server running at http://localhost:' + PORT + '\\n');
+  console.log('\\n🚀 Sitemap Analyzer v2.0 running at http://localhost:' + PORT);
+  console.log('   Worker pool: 4 scan, 2 analyze, 1 synthesize\\n');
 });
