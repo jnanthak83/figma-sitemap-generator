@@ -1,12 +1,17 @@
 {
-  "name": "sitemap-capture-server",
-  "version": "1.4.1",
-  "description": "Desktop app to capture full-page 4K screenshots for Figma sitemap generation",
+  "name": "sitemap-analyzer",
+  "version": "2.0.1",
+  "description": "Website capture and AI-powered UX analysis for Figma sitemap generation",
   "main": "app.js",
   "scripts": {
-    "start": "node app.js"
+    "start": "node app.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest --testPathPattern=tests/unit",
+    "test:integration": "jest --testPathPattern=tests/integration"
   },
-  "keywords": ["figma", "sitemap", "screenshot", "playwright", "ux", "design"],
+  "keywords": ["figma", "sitemap", "screenshot", "playwright", "ux", "design", "analysis"],
   "author": "Jesh",
   "license": "MIT",
   "repository": {
@@ -18,7 +23,45 @@
     "playwright": "^1.40.0",
     "cors": "^2.8.5"
   },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
+  },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "collectCoverageFrom": [
+      "workers/**/*.js",
+      "app.js",
+      "!**/node_modules/**"
+    ],
+    "coveragePathIgnorePatterns": [
+      "workers/scanner.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 60,
+        "functions": 70,
+        "lines": 65,
+        "statements": 65
+      },
+      "./workers/pool.js": {
+        "branches": 60,
+        "functions": 75,
+        "lines": 80,
+        "statements": 80
+      },
+      "./workers/analyzer.js": {
+        "branches": 90,
+        "functions": 100,
+        "lines": 95,
+        "statements": 95
+      }
+    },
+    "setupFilesAfterEnv": ["./tests/setup.js"],
+    "testTimeout": 30000
   }
 }

@@ -1,6 +1,13 @@
-# Sitemap Generator
+# Sitemap Analyzer v2.0
 
-A visual sitemap generator for Figma. Captures full-page 4K screenshots of any website and creates a hierarchical sitemap layout in Figma.
+A visual sitemap generator for Figma with AI-powered UX analysis. Captures full-page 4K screenshots using **parallel processing** and optionally analyzes pages for SEO, content quality, and UX issues.
+
+## What's New in v2.0
+
+- 🚀 **Parallel Capture** - 4x faster with worker pool (4 concurrent browsers)
+- 🤖 **AI Analysis** - Optional LLM-powered UX/SEO analysis
+- 📊 **Competitor Comparison** - Analyze multiple sites side-by-side
+- ✅ **Test Suite** - 165 tests with 76% coverage
 
 ## Features
 
@@ -8,7 +15,8 @@ A visual sitemap generator for Figma. Captures full-page 4K screenshots of any w
 - **Desktop + Mobile** - Side-by-side viewport comparison
 - **Auto-Discovery** - Crawls navigation to find all pages
 - **Hierarchy Detection** - Organizes pages by depth with connectors
-- **Large Image Support** - Tiles images to handle any page height
+- **Parallel Processing** - Captures 4 pages simultaneously
+- **AI Analysis** - SEO, content, UX, and structure scoring
 - **Project Management** - Save and manage multiple captures
 
 ## Quick Start
@@ -16,39 +24,23 @@ A visual sitemap generator for Figma. Captures full-page 4K screenshots of any w
 ### Option 1: Docker (Recommended)
 
 ```bash
-# Clone the repo
 git clone https://github.com/jnanthak83/figma-sitemap-generator.git
 cd figma-sitemap-generator
 
-# Build and run
 docker compose build
 docker compose up -d
 
 # Open http://localhost:3000
 ```
 
-**Docker Commands:**
-```bash
-docker compose up -d      # Start in background
-docker compose down       # Stop
-docker compose logs -f    # View logs
-docker compose restart    # Restart
-```
-
 ### Option 2: Local Install
 
 ```bash
-# Clone the repo
 git clone https://github.com/jnanthak83/figma-sitemap-generator.git
 cd figma-sitemap-generator
 
-# Install dependencies
 npm install
-
-# Install Playwright browser
 npx playwright install chromium
-
-# Start server
 npm start
 
 # Open http://localhost:3000
@@ -63,103 +55,181 @@ npm start
 3. Set crawl depth (1-5) and max pages
 4. Click **Discover Pages** to find all navigation links
 5. Review the page list, then click **Start Capture**
-6. Wait for all pages to be captured (progress shown in real-time)
+6. Watch parallel capture progress (4 pages at once!)
 
 ### 2. Import to Figma
 
 1. Open Figma Desktop
 2. Go to **Plugins → Development → Import plugin from manifest**
 3. Select `manifest.json` from this repo
-4. Run the plugin: **Plugins → Development → Sitemap Generator**
-5. If server is running, you'll see your projects
-6. Select project, display size, and format
-7. Click **Generate Sitemap**
+4. Run the plugin and select your project
+5. Click **Generate Sitemap**
 
-### Plugin Connection States
+## Architecture (v2.0)
 
-The Figma plugin shows server status:
-- 🟢 **Connected** - Server running, ready to import
-- 🔴 **Disconnected** - Click "Open Server UI" or "Retry Connection"
+```
+┌─────────────────────────────────────────────────────────┐
+│                     app.js (Express)                     │
+├─────────────────────────────────────────────────────────┤
+│                    Coordinator                           │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │              Worker Pool                         │    │
+│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌────────┐│    │
+│  │  │ Scanner │ │ Scanner │ │ Scanner │ │Scanner ││    │
+│  │  │   (1)   │ │   (2)   │ │   (3)   │ │  (4)  ││    │
+│  │  └─────────┘ └─────────┘ └─────────┘ └────────┘│    │
+│  │  ┌─────────┐ ┌─────────┐ ┌────────────────────┐│    │
+│  │  │Analyzer │ │Analyzer │ │    Synthesizer     ││    │
+│  │  │   (1)   │ │   (2)   │ │        (1)         ││    │
+│  │  └─────────┘ └─────────┘ └────────────────────┘│    │
+│  └─────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Worker Modules
+
+| Module | File | Purpose |
+|--------|------|---------|
+| Pool | `workers/pool.js` | Job queue with concurrency control |
+| Coordinator | `workers/coordinator.js` | Project orchestration |
+| Scanner | `workers/scanner.js` | Playwright page capture |
+| Analyzer | `workers/analyzer.js` | LLM-powered analysis |
+| Synthesizer | `workers/synthesizer.js` | Site-wide insights |
+| LLM | `workers/llm.js` | Ollama/Claude abstraction |
+
+## API Endpoints
+
+### Legacy (v1 compatible)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | Web UI |
+| GET | `/api/status` | Capture session status |
+| GET | `/api/projects` | List all projects |
+| POST | `/api/discover` | Crawl site navigation |
+| POST | `/api/capture` | Start parallel capture |
+| DELETE | `/api/projects/:id` | Delete project |
+
+### New v2 API
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/projects` | Create multi-site project |
+| GET | `/api/projects/:id/status` | Detailed progress |
+| POST | `/api/projects/:id/discover` | Start discovery phase |
+| GET | `/api/queue/status` | Worker pool status |
+| POST | `/api/config/llm` | Configure LLM provider |
+
+## Testing
+
+```bash
+# Run all tests
+npm test
+
+# With coverage report
+npm run test:coverage
+
+# Watch mode
+npm run test:watch
+
+# Unit tests only
+npm run test:unit
+
+# Integration tests only
+npm run test:integration
+```
+
+**Test Coverage:**
+- 165 tests across 7 suites
+- 76% line coverage
+- Key modules: pool, coordinator, analyzer, synthesizer
 
 ## Configuration
 
-### Capture Options (Web UI)
+### Worker Pool (in app.js)
+```javascript
+const coordinator = new Coordinator({
+  capturesDir: BASE_DIR,
+  poolConfig: {
+    scan: { concurrency: 4, timeout: 60000, retries: 2 },
+    analyze: { concurrency: 2, timeout: 120000, retries: 1 },
+    synthesize: { concurrency: 1, timeout: 300000, retries: 1 },
+    discover: { concurrency: 2, timeout: 30000, retries: 1 }
+  }
+});
+```
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| Max Depth | 3 | How deep to crawl navigation (1-5) |
-| Max Pages | 50 | Maximum pages to capture |
-| Desktop | ✓ | Capture at 1920px viewport (outputs 3840px) |
-| Mobile | ✓ | Capture at 390px viewport (outputs 780px) |
-| Scroll Delay | 150ms | Wait time for lazy-loaded content |
+### LLM Configuration (optional)
+```bash
+# Via API
+curl -X POST http://localhost:3000/api/config/llm \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "ollama", "model": "llama3.2"}'
+```
 
-### Figma Plugin Options
+## AI Analysis Setup (Optional)
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| Display Size | 500px | Thumbnail width in Figma (300-1920px) |
-| Format | PNG | PNG (sharp text) or JPEG (smaller files) |
+### Install Ollama (local LLM)
+```bash
+# macOS
+brew install ollama
+ollama pull llama3.2
+
+# Start Ollama
+ollama serve
+```
+
+### Or use Claude API
+```bash
+curl -X POST http://localhost:3000/api/config/llm \
+  -d '{"provider": "claude", "apiKey": "your-key"}'
+```
 
 ## Project Structure
 
 ```
 figma-sitemap-generator/
-├── app.js              # Capture server (Express + Playwright)
-├── code.js             # Figma plugin logic
-├── ui.html             # Figma plugin UI
-├── manifest.json       # Figma plugin manifest
-├── package.json        # Node dependencies
-├── Dockerfile          # Docker build
-├── docker-compose.yml  # Docker orchestration
-├── captures/           # Screenshot output (gitignored)
+├── app.js              # Express server + API
+├── workers/
+│   ├── pool.js         # Worker pool engine
+│   ├── coordinator.js  # Project orchestration
+│   ├── scanner.js      # Playwright capture
+│   ├── analyzer.js     # Page analysis
+│   ├── synthesizer.js  # Site synthesis
+│   └── llm.js          # LLM providers
+├── tests/
+│   ├── setup.js        # Jest configuration
+│   ├── unit/           # Unit tests
+│   └── integration/    # API tests
+├── code.js             # Figma plugin
+├── ui.html             # Plugin UI
+├── manifest.json       # Figma manifest
+├── package.json        # Dependencies
+├── SPEC.md             # Technical spec
 ├── CHANGELOG.md        # Version history
-└── SPEC.md             # Technical specification
+└── TODO.md             # Development roadmap
 ```
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/` | Web UI |
-| GET | `/api/status` | Server status |
-| GET | `/api/projects` | List saved projects |
-| GET | `/api/projects/:id/sitemap.json` | Get project metadata |
-| GET | `/captures/:id/` | Browse project files |
-| POST | `/api/discover` | Crawl site navigation |
-| POST | `/api/capture` | Start screenshot capture |
-| DELETE | `/api/projects/:id` | Delete a project |
-
-## Technical Details
-
-- **Viewport**: Desktop 1920×1080, Mobile 390×844
-- **Scale**: 2x for retina/4K output
-- **Wait Strategy**: `domcontentloaded` + 15s timeout
-- **Image Tiling**: Large images split into 1000px tiles for Figma compatibility
 
 ## Requirements
 
-- **Docker** (recommended) OR Node.js 18+
+- **Node.js** 18+ (for local install)
+- **Docker** (recommended for easy setup)
 - **Figma Desktop** (for the plugin)
+- **Ollama** (optional, for AI analysis)
 
 ## Troubleshooting
 
+### Capture is slow
+- Check worker pool status: `GET /api/queue/status`
+- Ensure 4 scan workers are running
+- Reduce scroll delay for faster sites
+
 ### Plugin shows "Server Not Running"
-- Start the server: `npm start` or `docker compose up -d`
-- Check the server URL in plugin settings
-- Click "Retry Connection"
+- Start server: `npm start` or `docker compose up -d`
+- Check http://localhost:3000 is accessible
 
-### Plugin crashes with "Image too large"
-- Use a smaller display size (500px or 800px)
-- The plugin automatically tiles large images, but very tall pages may still cause issues
-
-### Pages not loading correctly
-- Increase scroll delay for sites with lazy-loaded content
-- Some sites may block automated browsers
-
-### Docker build fails
-- Ensure Docker Desktop is running
-- Try `docker system prune` to free space
-- Check you have at least 4GB of disk space
+### Analysis not working
+- Ensure Ollama is running: `ollama serve`
+- Check LLM config: `GET /api/config/llm`
+- Falls back to heuristic analysis if LLM unavailable
 
 ## License
 
@@ -167,4 +237,4 @@ MIT
 
 ## Contributing
 
-Pull requests welcome! See [SPEC.md](SPEC.md) for technical details and [CHANGELOG.md](CHANGELOG.md) for version history.
+See [SPEC.md](SPEC.md) for technical details, [TODO.md](TODO.md) for roadmap, and [CHANGELOG.md](CHANGELOG.md) for version history.

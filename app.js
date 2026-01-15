@@ -555,6 +555,15 @@ function getWebUI() {
     .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; }
     .badge.v1 { background: #eee; color: #666; }
     .badge.v2 { background: #d4edda; color: #155724; }
+    textarea { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; font-family: inherit; resize: vertical; margin-bottom: 12px; }
+    textarea:focus { outline: none; border-color: #007AFF; }
+    .preset-btns { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .preset-btn { padding: 6px 12px; font-size: 11px; background: #f0f0f0; border: 1px solid #ddd; border-radius: 16px; cursor: pointer; }
+    .preset-btn:hover { background: #e0e0e0; }
+    .preset-btn.active { background: #007AFF; color: white; border-color: #007AFF; }
+    .section-divider { border-top: 1px solid #eee; margin: 20px 0; padding-top: 20px; }
+    .disabled-field { opacity: 0.5; pointer-events: none; }
+    .coming-soon { font-size: 10px; color: #888; font-style: italic; }
   </style>
 </head>
 <body>
