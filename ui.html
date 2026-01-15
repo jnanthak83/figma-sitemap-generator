@@ -296,7 +296,9 @@
                   height: th,
                   imageType: imageType,
                   totalWidth: w,
-                  totalHeight: h
+                  totalHeight: h,
+                  originalWidth: img.width,
+                  originalHeight: img.height
                 });
               }
             }
@@ -333,7 +335,9 @@
                 height: tile.height,
                 imageType: tile.imageType,
                 totalWidth: tile.totalWidth,
-                totalHeight: tile.totalHeight
+                totalHeight: tile.totalHeight,
+                originalWidth: tile.originalWidth,
+                originalHeight: tile.originalHeight
               });
             });
           }, tiles.mimeType, tiles.quality);
@@ -419,6 +423,18 @@
           
           currentTileIndex = 0;
           
+          // Find insights for this page from analysis
+          var pageInsights = [];
+          var pageElements = pg.elements || [];
+          if (currentSitemap.analysis && currentSitemap.analysis.pages) {
+            var analysisPage = currentSitemap.analysis.pages.find(function(ap) {
+              return ap.path === pg.path || ap.slug === pg.slug;
+            });
+            if (analysisPage && analysisPage.insights) {
+              pageInsights = analysisPage.insights;
+            }
+          }
+          
           parent.postMessage({ 
             pluginMessage: { 
               type: 'start-page',
@@ -430,8 +446,12 @@
                 depth: pg.depth,
                 desktopWidth: deskTiles ? deskTiles[0].totalWidth : 0,
                 desktopHeight: deskTiles ? deskTiles[0].totalHeight : 0,
+                desktopOriginalWidth: deskTiles ? deskTiles[0].originalWidth : 0,
+                desktopOriginalHeight: deskTiles ? deskTiles[0].originalHeight : 0,
                 mobileWidth: mobTiles ? mobTiles[0].totalWidth : 0,
-                mobileHeight: mobTiles ? mobTiles[0].totalHeight : 0
+                mobileHeight: mobTiles ? mobTiles[0].totalHeight : 0,
+                elements: pageElements,
+                insights: pageInsights
               },
               pageIndex: currentPageIndex,
               totalPages: currentSitemap.pages.length
@@ -462,13 +482,22 @@
             currentSitemap = sitemap;
             currentPageIndex = 0;
             
-            parent.postMessage({ 
-              pluginMessage: { 
-                type: 'start',
-                site: sitemap.site,
-                total: sitemap.pages.length
-              } 
-            }, '*');
+            // Also fetch analysis.json if it exists
+            return fetch(serverUrl + '/api/projects/' + projectId + '/analysis.json')
+              .then(function(res) { return res.ok ? res.json() : null; })
+              .catch(function() { return null; })
+              .then(function(analysis) {
+                currentSitemap.analysis = analysis;
+                
+                parent.postMessage({ 
+                  pluginMessage: { 
+                    type: 'start',
+                    site: sitemap.site,
+                    total: sitemap.pages.length,
+                    hasAnalysis: !!analysis
+                  } 
+                }, '*');
+              });
           })
           .catch(function(err) {
             showStatus('Error: ' + err.message, 'error');

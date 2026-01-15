@@ -483,6 +483,77 @@ async function runParallelCapture(baseUrl, config, projectId, projectDir) {
   captureSession.currentViewport = null;
   
   await closeBrowser();
+  
+  // Auto-run analysis if rubric provided or elements extracted
+  const hasRubric = captureSession.config?.rubric;
+  const hasElements = pages.some(p => p.elements && p.elements.length > 0);
+  
+  if (hasRubric || hasElements) {
+    console.log('\n🔍 Running analysis...');
+    captureSession.status = 'analyzing';
+    
+    try {
+      await runAnalysis(projectDir, pages, captureSession.config?.rubric, captureSession.site);
+      console.log('✓ Analysis complete - saved to analysis.json\n');
+    } catch (err) {
+      console.error('Analysis error:', err.message);
+    }
+    
+    captureSession.status = 'done';
+  }
+}
+
+// Run analysis on captured pages and save analysis.json
+async function runAnalysis(projectDir, pages, rubric, site) {
+  const analysisResults = {
+    site: site,
+    analyzed_at: new Date().toISOString(),
+    rubric: rubric || null,
+    pages: []
+  };
+  
+  for (const page of pages) {
+    if (page.status !== 'done') continue;
+    
+    try {
+      const result = await analyzePage({
+        site: site,
+        page: {
+          url: page.path,
+          path: page.path,
+          title: page.title
+        },
+        extracted: page.extracted || {},
+        elements: page.elements || [],
+        rubric: rubric
+      });
+      
+      analysisResults.pages.push({
+        path: page.path,
+        slug: page.slug,
+        title: page.title,
+        scores: result.scores || {},
+        insights: result.insights || [],
+        recommendations: result.recommendations || []
+      });
+      
+      console.log(`  ✓ ${page.slug}: ${result.insights?.length || 0} insights`);
+    } catch (err) {
+      console.error(`  ✗ ${page.slug}: ${err.message}`);
+      analysisResults.pages.push({
+        path: page.path,
+        slug: page.slug,
+        title: page.title,
+        error: err.message
+      });
+    }
+  }
+  
+  // Save analysis.json
+  fs.writeFileSync(
+    path.join(projectDir, 'analysis.json'),
+    JSON.stringify(analysisResults, null, 2)
+  );
 }
 
 // Web UI
@@ -843,6 +914,9 @@ function getWebUI() {
           text += ' — ' + data.currentPage + ' (' + data.currentViewport + ')';
         }
         statusEl.textContent = text;
+      } else if (data.status === 'analyzing') {
+        statusEl.textContent = '🔍 Analyzing pages...';
+        statusEl.className = 'status';
       } else if (data.status === 'done') {
         statusEl.textContent = '✓ Done! ' + data.pages.length + ' pages captured';
         clearInterval(pollInterval);

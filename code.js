@@ -11,7 +11,11 @@ const COLORS = {
   cardStroke: { r: 0.9, g: 0.9, b: 0.9 },
   connector: { r: 0.8, g: 0.8, b: 0.8 },
   title: { r: 0.1, g: 0.1, b: 0.1 },
-  url: { r: 0.5, g: 0.5, b: 0.5 }
+  url: { r: 0.5, g: 0.5, b: 0.5 },
+  // Hotspot severity colors
+  good: { r: 0.2, g: 0.78, b: 0.35 },      // Green
+  warning: { r: 1, g: 0.76, b: 0.03 },     // Yellow
+  issue: { r: 0.94, g: 0.27, b: 0.27 }     // Red
 };
 
 // State
@@ -73,6 +77,10 @@ async function handleStartPage(page, pageIndex, totalPages) {
   currentPage = page;
   desktopTiles = [];
   mobileTiles = [];
+  
+  // Store elements and insights for hotspot drawing
+  currentPage.elements = page.elements || [];
+  currentPage.insights = page.insights || [];
   
   // Calculate card size from first page
   if (pageIndex === 0) {
@@ -140,11 +148,25 @@ async function handleAddTile(tile) {
     scaleMode: 'FILL'
   }];
   
-  // Store tile with position info
+  // Store tile with position info and original dimensions
   if (tile.imageType === 'desktop') {
-    desktopTiles.push({ rect, x: tile.x, y: tile.y, totalWidth: tile.totalWidth, totalHeight: tile.totalHeight });
+    desktopTiles.push({ 
+      rect, 
+      x: tile.x, 
+      y: tile.y, 
+      totalWidth: tile.totalWidth, 
+      totalHeight: tile.totalHeight,
+      originalWidth: tile.originalWidth,
+      originalHeight: tile.originalHeight
+    });
   } else {
-    mobileTiles.push({ rect, x: tile.x, y: tile.y, totalWidth: tile.totalWidth, totalHeight: tile.totalHeight });
+    mobileTiles.push({ 
+      rect, 
+      x: tile.x, 
+      y: tile.y, 
+      totalWidth: tile.totalWidth, 
+      totalHeight: tile.totalHeight 
+    });
   }
   
   figma.ui.postMessage({ type: 'tile-added' });
@@ -198,6 +220,17 @@ async function handleFinishPage() {
     mobileImg.x = screenshotX;
     mobileImg.y = screenshotY;
     currentCard.appendChild(mobileImg);
+  }
+  
+  // Draw hotspot markers for insights with element references
+  if (currentPage.insights && currentPage.insights.length > 0 && desktopTiles.length > 0) {
+    // Scale = displayed size / original captured size
+    // Elements positions are in original captured coordinates
+    const displayedWidth = desktopTiles[0].totalWidth;
+    const originalWidth = desktopTiles[0].originalWidth || displayedWidth;
+    const scale = displayedWidth / originalWidth;
+    
+    drawHotspots(currentCard, currentPage, screenshotY, CARD_PADDING, scale);
   }
   
   // Store for repositioning
@@ -333,4 +366,70 @@ function getBounds(nodes) {
   });
   
   return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+// Draw hotspot markers for insights on the card
+function drawHotspots(card, page, screenshotY, offsetX, scale) {
+  const elements = page.elements || [];
+  const insights = page.insights || [];
+  
+  // Only show insights that reference elements
+  const elementInsights = insights.filter(ins => ins.elementRef);
+  if (elementInsights.length === 0) return;
+  
+  // Create hotspot markers
+  let markerNum = 1;
+  for (const insight of elementInsights) {
+    const element = elements.find(el => el.id === insight.elementRef);
+    if (!element || !element.desktop) continue;
+    
+    // Scale element position to match displayed screenshot size
+    const scaledX = element.desktop.x * scale;
+    const scaledY = element.desktop.y * scale;
+    const scaledW = element.desktop.width * scale;
+    
+    // Position marker at top-right of element
+    const markerX = offsetX + scaledX + scaledW - 8;
+    const markerY = screenshotY + scaledY - 8;
+    
+    // Determine color by severity
+    const color = COLORS[insight.severity] || COLORS.warning;
+    
+    // Create marker circle
+    const marker = figma.createEllipse();
+    marker.name = `Hotspot ${markerNum}`;
+    marker.resize(20, 20);
+    marker.x = markerX;
+    marker.y = markerY;
+    marker.fills = [{ type: 'SOLID', color: color }];
+    marker.strokes = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    marker.strokeWeight = 2;
+    marker.effects = [{
+      type: 'DROP_SHADOW',
+      color: { r: 0, g: 0, b: 0, a: 0.25 },
+      offset: { x: 0, y: 2 },
+      radius: 4,
+      spread: 0,
+      visible: true,
+      blendMode: 'NORMAL'
+    }];
+    
+    // Create number text
+    const numText = figma.createText();
+    numText.characters = String(markerNum);
+    numText.fontSize = 11;
+    numText.fontName = { family: "Inter", style: "Bold" };
+    numText.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    numText.textAlignHorizontal = 'CENTER';
+    numText.textAlignVertical = 'CENTER';
+    numText.resize(20, 20);
+    numText.x = markerX;
+    numText.y = markerY;
+    
+    // Group marker and number
+    card.appendChild(marker);
+    card.appendChild(numText);
+    
+    markerNum++;
+  }
 }
