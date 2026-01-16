@@ -826,16 +826,18 @@ function getWebUI() {
             <button class="btn-secondary" onclick="loadProjects()" style="padding: 12px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;"><span>↻</span> Refresh</button>
           </div>
         </div>
-        <div id="batchActions" style="display: none; margin-bottom: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px; align-items: center; gap: 12px;">
-          <span id="selectedCount" style="font-size: 14px; font-weight: 500; margin-right: 16px;">0 selected</span>
-          <button class="btn-danger" onclick="deleteSelected()" style="padding: 12px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;"><span>🗑</span> Delete Selected</button>
-        </div>
         <div id="projectsList" class="projects-list" style="max-height: 500px;">
           <div class="empty-state">Loading projects...</div>
         </div>
         <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
           <span id="totalStats" style="font-size: 14px; color: #666;"></span>
-          <button class="btn-danger" onclick="flushAll()" style="padding: 12px 16px; font-size: 14px; opacity: 0.8;">🗑 Delete All Captures</button>
+          <div id="footerActions">
+            <button id="deleteAllBtn" class="btn-danger" onclick="flushAll()" style="padding: 12px 16px; font-size: 14px; opacity: 0.8; display: inline-flex; align-items: center; gap: 6px;"><span>🗑</span> Delete All Captures</button>
+            <div id="selectedActions" style="display: none; align-items: center; gap: 12px;">
+              <span id="selectedCount" style="font-size: 14px; font-weight: 500;">0 selected</span>
+              <button class="btn-danger" onclick="deleteSelected()" style="padding: 12px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;"><span>🗑</span> Delete Selected</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -894,7 +896,8 @@ function getWebUI() {
 
       if (allProjects.length === 0) {
         container.innerHTML = '<div class="empty-state">No saved projects yet.</div>';
-        document.getElementById('batchActions').style.display = 'none';
+        document.getElementById('deleteAllBtn').style.display = 'none';
+        document.getElementById('selectedActions').style.display = 'none';
         return;
       }
 
@@ -951,8 +954,10 @@ function getWebUI() {
         if (cb.checked) selectedProjects.add(cb.value);
       });
       document.getElementById('selectedCount').textContent = selectedProjects.size + ' selected';
-      // Only show batch actions when items are selected
-      document.getElementById('batchActions').style.display = selectedProjects.size > 0 ? 'flex' : 'none';
+      // Toggle between Delete All and Delete Selected
+      const hasSelection = selectedProjects.size > 0;
+      document.getElementById('deleteAllBtn').style.display = hasSelection ? 'none' : 'inline-flex';
+      document.getElementById('selectedActions').style.display = hasSelection ? 'inline-flex' : 'none';
     }
 
     function toggleSelectAll(checkbox) {
