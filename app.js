@@ -811,11 +811,11 @@ function getWebUI() {
     </div>
     
     <div id="projects-tab" class="tab-content">
-      <div class="card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <div class="card" style="padding: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
           <h2 style="margin: 0;">Saved Projects</h2>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <select id="sortBy" onchange="loadProjects()" style="margin: 0; padding: 6px 10px; font-size: 12px;">
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <select id="sortBy" onchange="loadProjects()" style="margin: 0; padding: 12px 16px; font-size: 14px; border-radius: 6px; border: 1px solid #ddd;">
               <option value="date-desc">Newest First</option>
               <option value="date-asc">Oldest First</option>
               <option value="site-asc">Site A-Z</option>
@@ -823,21 +823,21 @@ function getWebUI() {
               <option value="pages-desc">Most Pages</option>
               <option value="pages-asc">Least Pages</option>
             </select>
-            <button class="btn-small btn-secondary" onclick="loadProjects()">↻ Refresh</button>
+            <button class="btn-secondary" onclick="loadProjects()" style="padding: 12px 16px; font-size: 14px;">↻ Refresh</button>
           </div>
         </div>
-        <div id="batchActions" style="display: none; margin-bottom: 12px; padding: 12px; background: #f9f9f9; border-radius: 6px;">
-          <span id="selectedCount" style="font-size: 13px; margin-right: 12px;">0 selected</span>
-          <button class="btn-small btn-danger" onclick="deleteSelected()">🗑 Delete Selected</button>
-          <button class="btn-small btn-secondary" onclick="selectAll()">Select All</button>
-          <button class="btn-small btn-secondary" onclick="selectNone()">Select None</button>
+        <div id="batchActions" style="display: none; margin-bottom: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px; align-items: center; gap: 12px;">
+          <span id="selectedCount" style="font-size: 14px; font-weight: 500; margin-right: 16px;">0 selected</span>
+          <button class="btn-danger" onclick="deleteSelected()" style="padding: 12px 16px; font-size: 14px;">🗑 Delete Selected</button>
+          <button class="btn-secondary" onclick="selectAll()" style="padding: 12px 16px; font-size: 14px;">Select All</button>
+          <button class="btn-secondary" onclick="selectNone()" style="padding: 12px 16px; font-size: 14px;">Select None</button>
         </div>
         <div id="projectsList" class="projects-list" style="max-height: 500px;">
           <div class="empty-state">Loading projects...</div>
         </div>
-        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
-          <span id="totalStats" style="font-size: 12px; color: #888;"></span>
-          <button class="btn-small btn-danger" onclick="flushAll()" style="opacity: 0.7;">🗑 Delete All Captures</button>
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+          <span id="totalStats" style="font-size: 14px; color: #666;"></span>
+          <button class="btn-danger" onclick="flushAll()" style="padding: 12px 16px; font-size: 14px; opacity: 0.8;">🗑 Delete All Captures</button>
         </div>
       </div>
     </div>
@@ -904,23 +904,23 @@ function getWebUI() {
       document.getElementById('batchActions').style.display = 'flex';
       updateSelectedCount();
 
-      container.innerHTML = '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">' +
+      container.innerHTML = '<table style="width: 100%; border-collapse: collapse; font-size: 14px;">' +
         '<thead><tr style="background: #f5f5f5; text-align: left;">' +
-          '<th style="padding: 10px 8px; width: 30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>' +
-          '<th style="padding: 10px 8px;">Site</th>' +
-          '<th style="padding: 10px 8px; width: 80px;">Pages</th>' +
-          '<th style="padding: 10px 8px; width: 140px;">Captured</th>' +
-          '<th style="padding: 10px 8px; width: 120px;">Actions</th>' +
+          '<th style="padding: 16px; width: 40px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)" style="width: 18px; height: 18px;"></th>' +
+          '<th style="padding: 16px;">Site</th>' +
+          '<th style="padding: 16px; width: 80px;">Pages</th>' +
+          '<th style="padding: 16px; width: 160px;">Captured</th>' +
+          '<th style="padding: 16px; width: 180px;">Actions</th>' +
         '</tr></thead><tbody>' +
         allProjects.map(p =>
           '<tr style="border-bottom: 1px solid #eee;" data-id="' + p.id + '">' +
-            '<td style="padding: 10px 8px;"><input type="checkbox" class="project-checkbox" value="' + p.id + '" onchange="updateSelectedCount()" ' + (selectedProjects.has(p.id) ? 'checked' : '') + '></td>' +
-            '<td style="padding: 10px 8px;"><strong>' + p.site + '</strong> <span class="badge ' + (p.version || 'v1') + '">' + (p.version || 'v1') + '</span></td>' +
-            '<td style="padding: 10px 8px;">' + (p.pageCount || 0) + '</td>' +
-            '<td style="padding: 10px 8px; color: #666;">' + p.captured_at + ' ' + (p.captured_at_time || '') + '</td>' +
-            '<td style="padding: 10px 8px;">' +
-              '<a class="btn-small btn-secondary" href="/captures/' + p.id + '/" target="_blank" style="margin-right: 4px;">View</a>' +
-              '<button class="btn-small btn-danger" onclick="deleteProject(\\'' + p.id + '\\')">Delete</button>' +
+            '<td style="padding: 16px;"><input type="checkbox" class="project-checkbox" value="' + p.id + '" onchange="updateSelectedCount()" style="width: 18px; height: 18px;" ' + (selectedProjects.has(p.id) ? 'checked' : '') + '></td>' +
+            '<td style="padding: 16px;"><strong>' + p.site + '</strong> <span class="badge ' + (p.version || 'v1') + '">' + (p.version || 'v1') + '</span></td>' +
+            '<td style="padding: 16px;">' + (p.pageCount || 0) + '</td>' +
+            '<td style="padding: 16px; color: #666;">' + p.captured_at + ' ' + (p.captured_at_time || '') + '</td>' +
+            '<td style="padding: 16px;">' +
+              '<a class="btn-secondary" href="/captures/' + p.id + '/" target="_blank" style="padding: 10px 16px; font-size: 13px; margin-right: 8px; text-decoration: none; display: inline-block;">View</a>' +
+              '<button class="btn-danger" onclick="deleteProject(\\'' + p.id + '\\')" style="padding: 10px 16px; font-size: 13px;">Delete</button>' +
             '</td>' +
           '</tr>'
         ).join('') +
