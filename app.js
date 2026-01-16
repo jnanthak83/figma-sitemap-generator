@@ -812,9 +812,32 @@ function getWebUI() {
     
     <div id="projects-tab" class="tab-content">
       <div class="card">
-        <h2>Saved Projects</h2>
-        <div id="projectsList" class="projects-list">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h2 style="margin: 0;">Saved Projects</h2>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select id="sortBy" onchange="loadProjects()" style="margin: 0; padding: 6px 10px; font-size: 12px;">
+              <option value="date-desc">Newest First</option>
+              <option value="date-asc">Oldest First</option>
+              <option value="site-asc">Site A-Z</option>
+              <option value="site-desc">Site Z-A</option>
+              <option value="pages-desc">Most Pages</option>
+              <option value="pages-asc">Least Pages</option>
+            </select>
+            <button class="btn-small btn-secondary" onclick="loadProjects()">↻ Refresh</button>
+          </div>
+        </div>
+        <div id="batchActions" style="display: none; margin-bottom: 12px; padding: 12px; background: #f9f9f9; border-radius: 6px;">
+          <span id="selectedCount" style="font-size: 13px; margin-right: 12px;">0 selected</span>
+          <button class="btn-small btn-danger" onclick="deleteSelected()">🗑 Delete Selected</button>
+          <button class="btn-small btn-secondary" onclick="selectAll()">Select All</button>
+          <button class="btn-small btn-secondary" onclick="selectNone()">Select None</button>
+        </div>
+        <div id="projectsList" class="projects-list" style="max-height: 500px;">
           <div class="empty-state">Loading projects...</div>
+        </div>
+        <div style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+          <span id="totalStats" style="font-size: 12px; color: #888;"></span>
+          <button class="btn-small btn-danger" onclick="flushAll()" style="opacity: 0.7;">🗑 Delete All Captures</button>
         </div>
       </div>
     </div>
@@ -854,34 +877,130 @@ function getWebUI() {
       if (tab === 'projects') loadProjects();
     }
     
+    let allProjects = [];
+    let selectedProjects = new Set();
+
     async function loadProjects() {
       const res = await fetch('/api/projects');
-      const projects = await res.json();
-      
+      allProjects = await res.json();
+
+      // Sort based on dropdown
+      const sortBy = document.getElementById('sortBy').value;
+      allProjects = sortProjects(allProjects, sortBy);
+
       const container = document.getElementById('projectsList');
-      
-      if (projects.length === 0) {
+
+      // Update stats
+      const totalPages = allProjects.reduce((sum, p) => sum + (p.pageCount || 0), 0);
+      document.getElementById('totalStats').textContent = allProjects.length + ' projects • ' + totalPages + ' total pages';
+
+      if (allProjects.length === 0) {
         container.innerHTML = '<div class="empty-state">No saved projects yet.</div>';
+        document.getElementById('batchActions').style.display = 'none';
         return;
       }
-      
-      container.innerHTML = projects.map(p => 
-        '<div class="project-item">' +
-          '<div class="project-info">' +
-            '<h3>' + p.site + ' <span class="badge ' + (p.version || 'v1') + '">' + (p.version || 'v1') + '</span></h3>' +
-            '<p>' + (p.pageCount || 0) + ' pages • ' + p.captured_at + ' ' + (p.captured_at_time || '') + '</p>' +
-          '</div>' +
-          '<div class="project-actions">' +
-            '<a class="btn-small btn-secondary" href="/captures/' + p.id + '/" target="_blank">View</a>' +
-            '<button class="btn-small btn-danger" onclick="deleteProject(\\'' + p.id + '\\')">Delete</button>' +
-          '</div>' +
-        '</div>'
-      ).join('');
+
+      // Show batch actions bar
+      document.getElementById('batchActions').style.display = 'flex';
+      updateSelectedCount();
+
+      container.innerHTML = '<table style="width: 100%; border-collapse: collapse; font-size: 13px;">' +
+        '<thead><tr style="background: #f5f5f5; text-align: left;">' +
+          '<th style="padding: 10px 8px; width: 30px;"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>' +
+          '<th style="padding: 10px 8px;">Site</th>' +
+          '<th style="padding: 10px 8px; width: 80px;">Pages</th>' +
+          '<th style="padding: 10px 8px; width: 140px;">Captured</th>' +
+          '<th style="padding: 10px 8px; width: 120px;">Actions</th>' +
+        '</tr></thead><tbody>' +
+        allProjects.map(p =>
+          '<tr style="border-bottom: 1px solid #eee;" data-id="' + p.id + '">' +
+            '<td style="padding: 10px 8px;"><input type="checkbox" class="project-checkbox" value="' + p.id + '" onchange="updateSelectedCount()" ' + (selectedProjects.has(p.id) ? 'checked' : '') + '></td>' +
+            '<td style="padding: 10px 8px;"><strong>' + p.site + '</strong> <span class="badge ' + (p.version || 'v1') + '">' + (p.version || 'v1') + '</span></td>' +
+            '<td style="padding: 10px 8px;">' + (p.pageCount || 0) + '</td>' +
+            '<td style="padding: 10px 8px; color: #666;">' + p.captured_at + ' ' + (p.captured_at_time || '') + '</td>' +
+            '<td style="padding: 10px 8px;">' +
+              '<a class="btn-small btn-secondary" href="/captures/' + p.id + '/" target="_blank" style="margin-right: 4px;">View</a>' +
+              '<button class="btn-small btn-danger" onclick="deleteProject(\\'' + p.id + '\\')">Delete</button>' +
+            '</td>' +
+          '</tr>'
+        ).join('') +
+        '</tbody></table>';
     }
-    
+
+    function sortProjects(projects, sortBy) {
+      const sorted = [...projects];
+      switch (sortBy) {
+        case 'date-desc':
+          return sorted.sort((a, b) => new Date(b.captured_at + 'T' + (b.captured_at_time || '00:00')) - new Date(a.captured_at + 'T' + (a.captured_at_time || '00:00')));
+        case 'date-asc':
+          return sorted.sort((a, b) => new Date(a.captured_at + 'T' + (a.captured_at_time || '00:00')) - new Date(b.captured_at + 'T' + (b.captured_at_time || '00:00')));
+        case 'site-asc':
+          return sorted.sort((a, b) => a.site.localeCompare(b.site));
+        case 'site-desc':
+          return sorted.sort((a, b) => b.site.localeCompare(a.site));
+        case 'pages-desc':
+          return sorted.sort((a, b) => (b.pageCount || 0) - (a.pageCount || 0));
+        case 'pages-asc':
+          return sorted.sort((a, b) => (a.pageCount || 0) - (b.pageCount || 0));
+        default:
+          return sorted;
+      }
+    }
+
+    function updateSelectedCount() {
+      const checkboxes = document.querySelectorAll('.project-checkbox');
+      selectedProjects.clear();
+      checkboxes.forEach(cb => {
+        if (cb.checked) selectedProjects.add(cb.value);
+      });
+      document.getElementById('selectedCount').textContent = selectedProjects.size + ' selected';
+    }
+
+    function toggleSelectAll(checkbox) {
+      const checkboxes = document.querySelectorAll('.project-checkbox');
+      checkboxes.forEach(cb => cb.checked = checkbox.checked);
+      updateSelectedCount();
+    }
+
+    function selectAll() {
+      const checkboxes = document.querySelectorAll('.project-checkbox');
+      checkboxes.forEach(cb => cb.checked = true);
+      document.getElementById('selectAllCheckbox').checked = true;
+      updateSelectedCount();
+    }
+
+    function selectNone() {
+      const checkboxes = document.querySelectorAll('.project-checkbox');
+      checkboxes.forEach(cb => cb.checked = false);
+      document.getElementById('selectAllCheckbox').checked = false;
+      updateSelectedCount();
+    }
+
+    async function deleteSelected() {
+      if (selectedProjects.size === 0) {
+        alert('No projects selected');
+        return;
+      }
+      if (!confirm('Delete ' + selectedProjects.size + ' selected project(s)?')) return;
+
+      for (const id of selectedProjects) {
+        await fetch('/api/projects/' + id, { method: 'DELETE' });
+      }
+      selectedProjects.clear();
+      loadProjects();
+    }
+
+    async function flushAll() {
+      if (!confirm('Delete ALL captures? This cannot be undone.')) return;
+      await fetch('/api/captures', { method: 'DELETE' });
+      selectedProjects.clear();
+      loadProjects();
+    }
+
     async function deleteProject(id) {
       if (!confirm('Delete this project?')) return;
       await fetch('/api/projects/' + id, { method: 'DELETE' });
+      selectedProjects.delete(id);
       loadProjects();
     }
     
