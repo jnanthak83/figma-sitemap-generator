@@ -1,45 +1,14 @@
-# Sitemap Analyzer - Technical Specification
+# Technical Specification
 
-## Overview
-
-A UX/Content Analysis Platform that captures websites and provides AI-powered insights:
-1. **Capture Server** - Node.js/Express with parallel Playwright scanning
-2. **Worker Pool** - Concurrent job processing for scan, analyze, synthesize
-3. **Figma Plugin** - Visual sitemap with annotated insights
-
----
-
-## Current Status
-
-**Version:** 2.0.0-dev
-
-### Completed (v1.4.1)
-- ✅ Basic scanning and capture (4K screenshots)
-- ✅ Figma plugin with tile-by-tile loading
-- ✅ Project management
-- ✅ Connection state UI
-- ✅ Docker support
-
-### In Progress (v2.0)
-- ✅ Worker pool foundation (`/workers/pool.js`)
-- ✅ Job coordinator (`/workers/coordinator.js`)
-- ✅ Scanner with extraction (`/workers/scanner.js`)
-- ✅ LLM provider abstraction (`/workers/llm.js`)
-- ✅ Analyzer worker (`/workers/analyzer.js`)
-- ✅ Synthesizer worker (`/workers/synthesizer.js`)
-- 🔲 Integration with app.js
-- 🔲 Multi-site UI
-- 🔲 Figma plugin analysis display
-
----
+Detailed technical reference for the Sitemap Analyzer. For usage instructions, see [README.md](README.md).
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                            WEB UI                                    │
-│  - Add multiple sites (your site + competitors)                      │
-│  - Configure analysis options                                        │
+│  - Add URL + analysis rubric                                         │
+│  - Configure capture options                                         │
 │  - Real-time progress dashboard                                      │
 └─────────────────────────────────────────────────────────────────────┘
                                  │
@@ -59,8 +28,8 @@ A UX/Content Analysis Platform that captures websites and provides AI-powered in
 │ (4 parallel)    │    │ (2 parallel)    │    │ (1 worker)      │
 │                 │    │                 │    │                 │
 │ - Screenshot    │    │ - LLM analysis  │    │ - Cross-page    │
-│ - Extract HTML  │    │ - Structure     │    │ - Cross-site    │
-│ - Extract text  │    │ - Content       │    │ - Recommendations│
+│ - Extract HTML  │    │ - Element refs  │    │ - Cross-site    │
+│ - Elements      │    │ - Insights      │    │ - Recommendations│
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          └───────────────────────┼───────────────────────┘
@@ -68,185 +37,25 @@ A UX/Content Analysis Platform that captures websites and provides AI-powered in
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         RESULTS STORE                                │
 │  /captures/{project_id}/                                             │
-│  ├── manifest.json      # Project config, sites, status             │
-│  ├── site_{domain}/                                                  │
-│  │   ├── sitemap.json   # Pages + extracted content                 │
-│  │   ├── analysis.json  # Per-page AI insights                      │
-│  │   └── screenshots/   # PNG files                                  │
-│  └── synthesis.json     # Cross-site comparison                     │
+│  ├── sitemap.json      # Pages + elements + extracted content       │
+│  ├── analysis.json     # Per-page AI insights                       │
+│  └── *.png             # Screenshots                                 │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
----
+## Worker Modules
 
-## File Structure
+| Module | File | Purpose |
+|--------|------|---------|
+| Pool | `workers/pool.js` | Job queue with priority and concurrency control |
+| Coordinator | `workers/coordinator.js` | Project orchestration, phase transitions |
+| Scanner | `workers/scanner.js` | Playwright capture + element extraction |
+| Analyzer | `workers/analyzer.js` | LLM analysis with rubric support |
+| Synthesizer | `workers/synthesizer.js` | Site-wide pattern detection |
+| LLM | `workers/llm.js` | Provider abstraction (Ollama/Claude/OpenAI) |
 
-```
-figma-sitemap-plugin/
-├── app.js                    # Express server + API endpoints
-├── code.js                   # Figma plugin logic
-├── ui.html                   # Figma plugin UI
-├── manifest.json             # Figma plugin manifest
-├── package.json
-│
-├── /workers                  # Worker pool system
-│   ├── pool.js               # Job queue + concurrency control
-│   ├── coordinator.js        # Job orchestration + phase transitions
-│   ├── scanner.js            # Screenshot + content extraction
-│   ├── analyzer.js           # LLM-powered page analysis
-│   ├── synthesizer.js        # Site-wide + cross-site comparison
-│   └── llm.js                # Provider abstraction (Ollama/Claude)
-│
-├── /captures                 # Output directory
-│   └── {project_id}/
-│       ├── manifest.json
-│       ├── site_{domain}/
-│       │   ├── sitemap.json
-│       │   ├── analysis.json
-│       │   └── screenshots/
-│       └── synthesis.json
-│
-├── SPEC.md                   # This file
-├── CHANGELOG.md
-├── README.md
-├── Dockerfile
-└── docker-compose.yml
-```
+### Worker Configuration
 
----
-
-## API Endpoints
-
-### Project Management
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/status` | Server status |
-| GET | `/api/projects` | List all projects |
-| POST | `/api/projects` | Create project with sites[] |
-| GET | `/api/projects/:id` | Get project details |
-| GET | `/api/projects/:id/status` | Job progress |
-| DELETE | `/api/projects/:id` | Delete project |
-
-### Capture & Analysis
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/projects/:id/discover` | Discover pages on all sites |
-| POST | `/api/projects/:id/scan` | Start scanning (queues jobs) |
-| GET | `/api/projects/:id/analysis` | Get analysis results |
-| GET | `/api/projects/:id/synthesis` | Get comparison results |
-
-### Configuration
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/queue/status` | Worker pool status |
-| POST | `/api/config/llm` | Configure LLM provider |
-
-### Legacy (v1 compatibility)
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/discover` | Discover pages (single site) |
-| POST | `/api/capture` | Capture pages (single site) |
-
----
-
-## Data Schemas
-
-### manifest.json
-```json
-{
-  "id": "proj_abc123",
-  "created_at": "2025-01-14T10:30:00Z",
-  "status": "analyzing",
-  "config": {
-    "maxDepth": 3,
-    "maxPagesPerSite": 50,
-    "captureDesktop": true,
-    "captureMobile": true,
-    "concurrency": 4,
-    "llm": { "provider": "ollama", "model": "llama3.2" }
-  },
-  "sites": [
-    { "url": "https://example.com", "role": "primary", "status": "complete" },
-    { "url": "https://rival.com", "role": "competitor", "status": "scanning" }
-  ],
-  "progress": {
-    "phase": "analyzing",
-    "scanComplete": 20,
-    "scanTotal": 30,
-    "analyzeComplete": 15,
-    "analyzeTotal": 30
-  }
-}
-```
-
-### sitemap.json (per site)
-```json
-{
-  "site": "example.com",
-  "pages": [{
-    "slug": "home",
-    "path": "/",
-    "title": "Home",
-    "depth": 0,
-    "desktopFile": "screenshots/home_desktop.png",
-    "extracted": {
-      "meta": { "title": "...", "description": "..." },
-      "headings": { "h1": ["..."], "h2": ["..."] },
-      "ctas": [{ "text": "Get Started", "prominence": "primary" }],
-      "components": { "hero": true, "testimonials": true }
-    }
-  }]
-}
-```
-
-### analysis.json (per site)
-```json
-{
-  "pages": [{
-    "path": "/",
-    "scores": { "overall": 72, "content": 68, "ux": 70, "seo": 75 },
-    "recommendations": [{
-      "priority": "high",
-      "issue": "Weak CTA",
-      "suggestion": "Change to action-specific text"
-    }]
-  }],
-  "siteWide": {
-    "strengths": ["Consistent navigation"],
-    "weaknesses": ["Missing trust signals"],
-    "topPriority": "Add customer logos"
-  }
-}
-```
-
-### synthesis.json (cross-site)
-```json
-{
-  "sites": { "primary": "example.com", "competitors": ["rival.com"] },
-  "comparison": {
-    "insights": ["rival.com uses video hero", "Missing trust badges"]
-  },
-  "recommendations": {
-    "quickWins": [{ "action": "Add customer logos", "impact": "high" }]
-  },
-  "summary": {
-    "overallPosition": "middle",
-    "topPriority": "Add trust signals"
-  }
-}
-```
-
----
-
-## Worker Pool
-
-### Job Types
-- `discover` - Find pages on a site
-- `scan` - Screenshot + extract content
-- `analyze` - LLM analysis of page
-- `synthesize` - Cross-site comparison
-
-### Configuration
 ```javascript
 {
   scan: { concurrency: 4, timeout: 60000, retries: 2 },
@@ -256,96 +65,156 @@ figma-sitemap-plugin/
 ```
 
 ### Job Flow
+
 ```
 discover → scan (parallel) → analyze (parallel) → synthesize
 ```
 
----
+## Data Schemas
+
+### sitemap.json
+
+```json
+{
+  "site": "example.com",
+  "captured_at": "2025-01-15",
+  "captured_at_time": "14:30",
+  "timing": {
+    "total": "45.2s",
+    "mode": "parallel",
+    "workers": 4
+  },
+  "rubric": "- Check CTA visibility\n- Evaluate trust signals",
+  "pages": [{
+    "slug": "home",
+    "path": "/",
+    "title": "Home",
+    "depth": 0,
+    "parent": null,
+    "desktopFile": "example_home_desktop.png",
+    "mobileFile": "example_home_mobile.png",
+    "extracted": {
+      "meta": { "title": "...", "description": "..." },
+      "headings": { "h1": ["..."], "h2": ["..."] },
+      "ctas": [{ "text": "Get Started", "prominence": "primary" }],
+      "components": { "hero": true, "testimonials": false }
+    },
+    "elements": [{
+      "id": "el_001",
+      "type": "cta",
+      "text": "Get Started",
+      "prominence": "primary",
+      "selector": "button.hero-cta",
+      "desktop": { "x": 540, "y": 820, "width": 180, "height": 48 },
+      "mobile": { "x": 20, "y": 650, "width": 350, "height": 48 }
+    }]
+  }]
+}
+```
+
+### analysis.json
+
+```json
+{
+  "pages": [{
+    "path": "/",
+    "slug": "home",
+    "site": "example.com",
+    "scores": {
+      "overall": 72,
+      "content": 68,
+      "structure": 75,
+      "ux": 70,
+      "seo": 75
+    },
+    "insights": [{
+      "id": "ins_001",
+      "elementRef": "el_001",
+      "severity": "warning",
+      "category": "conversion",
+      "message": "CTA uses generic text 'Get Started'",
+      "suggestion": "Use action-specific text like 'Start Free Trial'",
+      "rubricMatch": "- Check if primary CTA is specific"
+    }],
+    "llm": {
+      "provider": "ollama",
+      "model": "llama3.2"
+    }
+  }]
+}
+```
+
+### Element Types
+
+| Type | Selector | Data |
+|------|----------|------|
+| `heading` | h1, h2, h3 | level, text |
+| `cta` | button, a.btn, [role="button"] | text, prominence, href |
+| `form` | form | fields[], action |
+| `nav` | nav, [role="navigation"] | links[], location |
+| `image` | img (>200px, in first 1000px) | alt, src |
+| `trust` | [class*="logo"], [class*="badge"] | text |
+
+### Insight Severity Levels
+
+| Severity | Color | Meaning |
+|----------|-------|---------|
+| `good` | 🟢 Green | Positive finding |
+| `warning` | 🟡 Yellow | Minor issue or improvement |
+| `issue` | 🔴 Red | Problem that needs fixing |
+
+## API Reference
+
+### Project Management
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/status` | Server status |
+| GET | `/api/projects` | List all projects |
+| POST | `/api/projects` | Create project |
+| GET | `/api/projects/:id` | Get project details |
+| DELETE | `/api/projects/:id` | Delete project |
+
+### Capture & Analysis
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/discover` | Discover pages on site |
+| POST | `/api/capture` | Start parallel capture |
+| GET | `/api/projects/:id/status` | Job progress |
+| GET | `/api/queue/status` | Worker pool status |
+
+### Configuration
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/config/llm` | Configure LLM provider |
 
 ## LLM Integration
 
 ### Providers
+
 | Provider | Use Case | Offline |
 |----------|----------|---------|
-| Ollama | Local analysis | ✅ |
-| Claude | High-quality synthesis | ❌ |
-| OpenAI | Alternative | ❌ |
+| Ollama | Local analysis | Yes |
+| Claude | High-quality synthesis | No |
+| OpenAI | Alternative | No |
 
-### Configuration
+### Environment Variables
+
 ```bash
-# Environment variables
 ANTHROPIC_API_KEY=sk-ant-...
 OLLAMA_ENDPOINT=http://localhost:11434
 ```
 
----
+### Fallback Behavior
 
-## Implementation Phases
+When no LLM is available, `createBasicAnalysis()` generates insights using heuristics:
+- SEO checks (title length, meta description, headings)
+- Element-referenced insights (CTA count, H1 presence)
+- Rubric keyword matching (trust, CTA, navigation)
 
-### Phase 1: Worker Pool Integration ⬜ IN PROGRESS
-- [x] Create pool.js, coordinator.js, scanner.js
-- [x] Create llm.js, analyzer.js, synthesizer.js
-- [ ] Integrate coordinator with app.js
-- [ ] Add new API endpoints
-- [ ] Update web UI for multi-site
-
-### Phase 2: Content Extraction ✅ DONE
-- [x] Extract headings, CTAs, components during scan
-- [x] Save extracted data in sitemap.json
-
-### Phase 3: LLM Analysis ✅ DONE (workers ready)
-- [x] Ollama integration
-- [x] Claude API integration
-- [x] Basic analysis without LLM (fallback)
-- [ ] Test with real sites
-
-### Phase 4: Site Synthesis ✅ DONE (workers ready)
-- [x] Site-wide pattern detection
-- [x] Cross-site comparison
-- [ ] Test with multiple sites
-
-### Phase 5: Figma Plugin Update ⬜ TODO
-- [ ] Score badges on cards
-- [ ] Comparison view layout
-- [ ] Recommendation panel
-
----
-
-## Commands
-
-```bash
-# Development
-cd /Users/jesh/Documents/Projects/figma-sitemap-plugin
-npm start
-
-# Docker
-docker compose up -d
-docker compose logs -f
-docker compose down
-
-# Test Ollama
-curl http://localhost:11434/api/tags
-```
-
----
-
-## Annotations & Rubric System
-
-### Overview
-
-Visual annotation system that highlights specific UI elements on screenshots with numbered hotspot markers, linked to insights in a collapsible side panel. Users can provide custom analysis rubrics to evaluate pages against their own criteria.
-
-### User Flow
-
-```
-1. User enters URL + custom rubric in Web UI
-2. Scanner captures screenshot + extracts element positions
-3. Analyzer evaluates page against rubric, references specific elements
-4. Figma plugin displays:
-   - Screenshot with numbered hotspot markers
-   - Side panel with insights linked to markers
-   - Color-coded severity (🟢 good, 🟡 warning, 🔴 issue)
-```
+## Annotation System
 
 ### Data Flow
 
@@ -356,137 +225,87 @@ elements[] ──────────────► insights[] ────
 (positions)                (elementRef)               (markers + panel)
 ```
 
-### Element Schema (sitemap.json)
+### Figma Plugin Rendering
 
-```json
-{
-  "pages": [{
-    "slug": "home",
-    "elements": [
-      {
-        "id": "el_001",
-        "type": "cta",
-        "text": "Get Started",
-        "selector": "button.hero-cta",
-        "desktop": { "x": 540, "y": 820, "width": 180, "height": 48 },
-        "mobile": { "x": 20, "y": 650, "width": 350, "height": 48 }
-      },
-      {
-        "id": "el_002",
-        "type": "heading",
-        "level": 1,
-        "text": "Welcome to Example",
-        "desktop": { "x": 400, "y": 200, "width": 400, "height": 60 },
-        "mobile": { "x": 20, "y": 150, "width": 350, "height": 80 }
-      }
-    ]
-  }]
-}
+1. Fetch `sitemap.json` and `analysis.json` from server
+2. For each page card:
+   - Draw screenshot as image fill
+   - For each insight with `elementRef`:
+     - Find matching element in `elements[]`
+     - Draw numbered circle at element's top-right corner
+     - Color by severity (green/yellow/red)
+   - Draw insights panel below card
+     - Number badge + category tag + message
+     - Max 5 insights per card
+
+## Preset Rubrics
+
+### UX Audit
+```
+- Check navigation accessibility and clarity
+- Evaluate visual hierarchy and content flow
+- Assess mobile responsiveness
+- Look for consistent interaction patterns
+- Check form usability and error handling
 ```
 
-### Insight Schema (analysis.json)
-
-```json
-{
-  "pages": [{
-    "path": "/",
-    "insights": [
-      {
-        "id": "ins_001",
-        "elementRef": "el_001",
-        "severity": "warning",
-        "category": "conversion",
-        "message": "CTA uses generic text 'Get Started'",
-        "suggestion": "Use action-specific text like 'Start Free Trial'",
-        "rubricMatch": "Check if primary CTA is specific and action-oriented"
-      },
-      {
-        "id": "ins_002",
-        "elementRef": null,
-        "severity": "issue",
-        "category": "trust",
-        "message": "No trust signals found above the fold",
-        "suggestion": "Add customer logos or security badges near hero",
-        "rubricMatch": "Evaluate trust signals presence"
-      }
-    ]
-  }]
-}
-```
-
-### Rubric Format
-
-User-provided text, one criterion per line:
-
+### Conversion
 ```
 - Check if primary CTA is above the fold
-- Evaluate trust signals (logos, testimonials, security badges)
-- Assess mobile navigation accessibility
-- Look for pricing transparency
-- Check form field labels and error states
-- Verify consistent visual hierarchy
+- Evaluate trust signals (logos, testimonials, badges)
+- Assess pricing transparency and clarity
+- Look for friction points in user journey
+- Check urgency and scarcity elements
 ```
 
-### Preset Rubrics
+### Accessibility
+```
+- Check color contrast ratios
+- Evaluate form label associations
+- Assess keyboard navigation support
+- Look for alt text on images
+- Check focus state visibility
+```
 
-| Preset | Focus |
-|--------|-------|
-| UX Audit | Navigation, hierarchy, accessibility, mobile |
-| Conversion | CTAs, trust signals, friction points, clarity |
-| Accessibility | Contrast, labels, focus states, alt text |
-| SEO | Headings, meta, content structure, links |
+### SEO
+```
+- Check H1 presence and uniqueness
+- Evaluate meta title and description
+- Assess heading hierarchy (H1-H6)
+- Look for internal linking structure
+- Check image optimization
+```
 
----
+## Development Status
 
-## Implementation TODO
+### Completed
+- Worker pool system (pool, coordinator, scanner, analyzer, synthesizer, llm)
+- Element position extraction during capture
+- Custom rubric support in analyzer
+- Web UI with rubric input and presets
+- Figma plugin with hotspot markers and insights panel
+- Heuristic fallback when LLM unavailable
+- Test suite (165 tests, 76% coverage)
 
-### Phase 1: Scanner — Extract Element Positions ✅ DONE
-- [x] Update `/workers/scanner.js` to extract bounding boxes during capture
-- [x] Capture positions for: CTAs, headings (h1-h3), forms, images, nav items
-- [x] Store as `elements[]` array in sitemap.json with `{type, text, x, y, width, height, viewport}`
-- [x] Normalize coordinates relative to full-page screenshot dimensions
+### TODO
+- `POST /api/projects/:id/analyze` endpoint
+- Click hotspot → highlight insight in panel
+- Multi-site comparison synthesis
+- Competitor side-by-side view in Figma
 
-### Phase 2: Analyzer — Custom Rubric Support ✅ DONE
-- [x] Add `rubric` field to analysis config
-- [x] Update `/workers/analyzer.js` to include rubric in LLM prompt
-- [x] Generate insights that reference specific elements by ID
-- [x] Output: `insights[]` with `{id, elementRef, severity, message, suggestion}`
+## Commands
 
-### Phase 3: Web UI — Rubric Input & Competitor Field ✅ DONE
-- [x] Add "Analysis Rubric" textarea to capture form
-- [x] Add preset buttons (UX Audit, Conversion, Accessibility, SEO) that populate rubric
-- [x] Add "Add Competitor" input field (disabled/placeholder for now)
-- [x] Save rubric to project config (sitemap.json)
+```bash
+# Development
+npm start                    # Start server on localhost:3000
+npm test                     # Run test suite
+npm run test:coverage        # Run with coverage report
 
-### Phase 4: Figma Plugin — Annotation Panel ✅ DONE
-- [x] Update `code.js` to fetch `analysis.json` alongside `sitemap.json`
-- [x] Draw numbered hotspot markers on screenshots at element positions
-- [x] Color-code markers by severity (🟢 good, 🟡 warning, 🔴 issue)
-- [x] Auto-run analysis after capture when rubric or elements present
-- [x] Create insights panel below screenshots showing insights list
-- [x] Panel shows: number badge, category tag, message (max 5 per card)
-- [ ] Click hotspot → highlight corresponding insight in panel (deferred)
+# Docker
+docker compose up -d         # Start in background
+docker compose logs -f       # View logs
+docker compose down          # Stop
 
-### Phase 5: API Updates ⬜ TODO
-- [ ] `POST /api/projects/:id/analyze` — trigger analysis with rubric
-- [ ] `GET /api/projects/:id/analysis.json` — fetch results for Figma
-
----
-
-## Future (Out of Scope)
-
-- [ ] Multi-site comparison synthesis
-- [ ] Competitor side-by-side view in Figma
-- [ ] Rubric templates library
-- [ ] Export annotations as PDF report
-- [ ] Version comparison (before/after)
-
----
-
-## Next Steps
-
-1. **Phase 1** - Update scanner to extract element positions
-2. **Phase 2** - Add rubric support to analyzer
-3. **Phase 3** - Web UI for rubric input
-4. **Phase 4** - Figma plugin annotations
-5. **Phase 5** - API endpoints
+# Test Ollama
+curl http://localhost:11434/api/tags
+```
