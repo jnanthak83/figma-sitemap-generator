@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.1] - 2026-01-16
+
+### Added
+- **Analysis API Endpoints**
+  - `GET /api/projects/:id/analysis.json` - Fetch analysis results
+  - `POST /api/projects/:id/analyze` - Trigger analysis with optional rubric
+- Auto-analysis runs after capture when rubric or elements present
+
+### Changed
+- Consolidated documentation: merged BUILD.md, IMPLEMENTATION.md, TODO.md into README.md
+- Streamlined SPEC.md as focused technical reference
+- Removed unused files (capture.py, debug scripts)
+
 ## [2.1.0] - 2025-01-15
 
 ### Added

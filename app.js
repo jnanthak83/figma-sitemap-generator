@@ -238,6 +238,64 @@ app.get('/api/projects/:projectId/sitemap.json', (req, res) => {
   }
 });
 
+// Get analysis.json for a project
+app.get('/api/projects/:projectId/analysis.json', (req, res) => {
+  const projectDir = path.join(BASE_DIR, req.params.projectId);
+
+  // Try v2 structure (with site subdirectories)
+  if (fs.existsSync(projectDir)) {
+    const subdirs = fs.readdirSync(projectDir, { withFileTypes: true })
+      .filter(d => d.isDirectory() && d.name.startsWith('site_'));
+
+    if (subdirs.length > 0) {
+      const analysisPath = path.join(projectDir, subdirs[0].name, 'analysis.json');
+      if (fs.existsSync(analysisPath)) {
+        return res.sendFile(analysisPath);
+      }
+    }
+  }
+
+  // Legacy v1 structure
+  const analysisPath = path.join(BASE_DIR, req.params.projectId, 'analysis.json');
+  if (fs.existsSync(analysisPath)) {
+    res.sendFile(analysisPath);
+  } else {
+    res.status(404).json({ error: 'Analysis not found. Run POST /api/projects/:id/analyze first.' });
+  }
+});
+
+// Trigger analysis on an existing project
+app.post('/api/projects/:projectId/analyze', async (req, res) => {
+  const { rubric } = req.body;
+  const projectDir = path.join(BASE_DIR, req.params.projectId);
+
+  if (!fs.existsSync(projectDir)) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+
+  // Load sitemap.json
+  const sitemapPath = path.join(projectDir, 'sitemap.json');
+  if (!fs.existsSync(sitemapPath)) {
+    return res.status(404).json({ error: 'No sitemap.json found in project' });
+  }
+
+  const sitemap = JSON.parse(fs.readFileSync(sitemapPath, 'utf8'));
+  const pages = sitemap.pages || [];
+  const site = sitemap.site;
+  const effectiveRubric = rubric || sitemap.rubric || null;
+
+  res.json({ status: 'analyzing', pages: pages.length, rubric: effectiveRubric });
+
+  // Run analysis in background
+  try {
+    console.log(`\n🔍 Running analysis for ${req.params.projectId}...`);
+    await runAnalysis(projectDir, pages, effectiveRubric, site);
+    console.log('✓ Analysis complete\n');
+  } catch (err) {
+    console.error('Analysis error:', err.message);
+  }
+});
+
 app.get('/api/projects/:projectId/:filename', (req, res) => {
   const filepath = path.join(BASE_DIR, req.params.projectId, req.params.filename);
   if (fs.existsSync(filepath)) {

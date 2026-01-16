@@ -182,6 +182,8 @@ discover → scan (parallel) → analyze (parallel) → synthesize
 | POST | `/api/discover` | Discover pages on site |
 | POST | `/api/capture` | Start parallel capture |
 | GET | `/api/projects/:id/status` | Job progress |
+| GET | `/api/projects/:id/analysis.json` | Get analysis results |
+| POST | `/api/projects/:id/analyze` | Trigger analysis with optional rubric |
 | GET | `/api/queue/status` | Worker pool status |
 
 ### Configuration
@@ -286,9 +288,9 @@ elements[] ──────────────► insights[] ────
 - Figma plugin with hotspot markers and insights panel
 - Heuristic fallback when LLM unavailable
 - Test suite (165 tests, 76% coverage)
+- Analysis API endpoints (`GET /analysis.json`, `POST /analyze`)
 
 ### TODO
-- `POST /api/projects/:id/analyze` endpoint
 - Click hotspot → highlight insight in panel
 - Multi-site comparison synthesis
 - Competitor side-by-side view in Figma
