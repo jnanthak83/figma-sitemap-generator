@@ -823,14 +823,12 @@ function getWebUI() {
               <option value="pages-desc">Most Pages</option>
               <option value="pages-asc">Least Pages</option>
             </select>
-            <button class="btn-secondary" onclick="loadProjects()" style="padding: 12px 16px; font-size: 14px;">↻ Refresh</button>
+            <button class="btn-secondary" onclick="loadProjects()" style="padding: 12px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;"><span>↻</span> Refresh</button>
           </div>
         </div>
         <div id="batchActions" style="display: none; margin-bottom: 16px; padding: 16px; background: #f5f5f5; border-radius: 8px; align-items: center; gap: 12px;">
           <span id="selectedCount" style="font-size: 14px; font-weight: 500; margin-right: 16px;">0 selected</span>
-          <button class="btn-danger" onclick="deleteSelected()" style="padding: 12px 16px; font-size: 14px;">🗑 Delete Selected</button>
-          <button class="btn-secondary" onclick="selectAll()" style="padding: 12px 16px; font-size: 14px;">Select All</button>
-          <button class="btn-secondary" onclick="selectNone()" style="padding: 12px 16px; font-size: 14px;">Select None</button>
+          <button class="btn-danger" onclick="deleteSelected()" style="padding: 12px 16px; font-size: 14px; display: inline-flex; align-items: center; gap: 6px;"><span>🗑</span> Delete Selected</button>
         </div>
         <div id="projectsList" class="projects-list" style="max-height: 500px;">
           <div class="empty-state">Loading projects...</div>
@@ -900,8 +898,7 @@ function getWebUI() {
         return;
       }
 
-      // Show batch actions bar
-      document.getElementById('batchActions').style.display = 'flex';
+      // Update batch actions visibility based on selection
       updateSelectedCount();
 
       container.innerHTML = '<table style="width: 100%; border-collapse: collapse; font-size: 14px;">' +
@@ -954,25 +951,13 @@ function getWebUI() {
         if (cb.checked) selectedProjects.add(cb.value);
       });
       document.getElementById('selectedCount').textContent = selectedProjects.size + ' selected';
+      // Only show batch actions when items are selected
+      document.getElementById('batchActions').style.display = selectedProjects.size > 0 ? 'flex' : 'none';
     }
 
     function toggleSelectAll(checkbox) {
       const checkboxes = document.querySelectorAll('.project-checkbox');
       checkboxes.forEach(cb => cb.checked = checkbox.checked);
-      updateSelectedCount();
-    }
-
-    function selectAll() {
-      const checkboxes = document.querySelectorAll('.project-checkbox');
-      checkboxes.forEach(cb => cb.checked = true);
-      document.getElementById('selectAllCheckbox').checked = true;
-      updateSelectedCount();
-    }
-
-    function selectNone() {
-      const checkboxes = document.querySelectorAll('.project-checkbox');
-      checkboxes.forEach(cb => cb.checked = false);
-      document.getElementById('selectAllCheckbox').checked = false;
       updateSelectedCount();
     }
 
