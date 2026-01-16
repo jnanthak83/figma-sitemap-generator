@@ -5,6 +5,8 @@ const CARD_GAP = 80;
 const LEVEL_GAP = 300;
 const CARD_PADDING = 24;
 const SCREENSHOT_GAP = 16;
+const INSIGHTS_PANEL_ROW_HEIGHT = 28;
+const INSIGHTS_PANEL_PADDING = 16;
 
 const COLORS = {
   cardBg: { r: 1, g: 1, b: 1 },
@@ -89,8 +91,15 @@ async function handleStartPage(page, pageIndex, totalPages) {
     const mobileW = page.mobileWidth || 90;
     const mobileH = page.mobileHeight || 200;
     
+    // Count insights with element refs for panel sizing (max 5 shown)
+    const linkedInsights = (page.insights || []).filter(i => i.elementRef).length;
+    const maxInsights = Math.min(linkedInsights, 5);
+    const panelHeight = maxInsights > 0 
+      ? INSIGHTS_PANEL_PADDING * 2 + maxInsights * INSIGHTS_PANEL_ROW_HEIGHT + 24 // +24 for header
+      : 0;
+    
     cardWidth = CARD_PADDING * 2 + desktopW + SCREENSHOT_GAP + mobileW;
-    cardHeight = CARD_PADDING * 2 + 50 + Math.max(desktopH, mobileH);
+    cardHeight = CARD_PADDING * 2 + 50 + Math.max(desktopH, mobileH) + panelHeight;
   }
 
   // Grid layout position
@@ -223,6 +232,7 @@ async function handleFinishPage() {
   }
   
   // Draw hotspot markers for insights with element references
+  let hotspotMapping = [];
   if (currentPage.insights && currentPage.insights.length > 0 && desktopTiles.length > 0) {
     // Scale = displayed size / original captured size
     // Elements positions are in original captured coordinates
@@ -230,7 +240,13 @@ async function handleFinishPage() {
     const originalWidth = desktopTiles[0].originalWidth || displayedWidth;
     const scale = displayedWidth / originalWidth;
     
-    drawHotspots(currentCard, currentPage, screenshotY, CARD_PADDING, scale);
+    hotspotMapping = drawHotspots(currentCard, currentPage, screenshotY, CARD_PADDING, scale);
+  }
+  
+  // Draw insights panel below screenshots
+  if (hotspotMapping.length > 0 && desktopTiles.length > 0) {
+    const screenshotBottom = screenshotY + desktopTiles[0].totalHeight;
+    drawInsightsPanel(currentCard, hotspotMapping, screenshotBottom + 16, cardWidth);
   }
   
   // Store for repositioning
@@ -369,13 +385,15 @@ function getBounds(nodes) {
 }
 
 // Draw hotspot markers for insights on the card
+// Returns array of { num, insight, element } for panel
 function drawHotspots(card, page, screenshotY, offsetX, scale) {
   const elements = page.elements || [];
   const insights = page.insights || [];
+  const mapping = [];
   
   // Only show insights that reference elements
   const elementInsights = insights.filter(ins => ins.elementRef);
-  if (elementInsights.length === 0) return;
+  if (elementInsights.length === 0) return mapping;
   
   // Create hotspot markers
   let markerNum = 1;
@@ -426,10 +444,90 @@ function drawHotspots(card, page, screenshotY, offsetX, scale) {
     numText.x = markerX;
     numText.y = markerY;
     
-    // Group marker and number
     card.appendChild(marker);
     card.appendChild(numText);
     
+    // Store mapping for panel
+    mapping.push({ num: markerNum, insight, element });
     markerNum++;
+  }
+  
+  return mapping;
+}
+
+// Draw insights panel below screenshots (max 5 shown)
+function drawInsightsPanel(card, mapping, startY, cardWidth) {
+  if (mapping.length === 0) return;
+  
+  const panelX = CARD_PADDING;
+  const panelWidth = cardWidth - CARD_PADDING * 2;
+  const maxShow = 5;
+  const displayMapping = mapping.slice(0, maxShow);
+  const moreCount = mapping.length - maxShow;
+  let currentY = startY;
+  
+  // Panel header
+  const header = figma.createText();
+  const headerText = moreCount > 0 
+    ? `${mapping.length} Insights (showing ${maxShow})`
+    : `${mapping.length} Insight${mapping.length > 1 ? 's' : ''}`;
+  header.characters = headerText;
+  header.fontSize = 12;
+  header.fontName = { family: "Inter", style: "Bold" };
+  header.fills = [{ type: 'SOLID', color: COLORS.title }];
+  header.x = panelX;
+  header.y = currentY;
+  card.appendChild(header);
+  
+  currentY += 24;
+  
+  // Draw each insight row
+  for (const item of displayMapping) {
+    const { num, insight } = item;
+    const color = COLORS[insight.severity] || COLORS.warning;
+    
+    // Number badge (small circle)
+    const badge = figma.createEllipse();
+    badge.resize(18, 18);
+    badge.x = panelX;
+    badge.y = currentY + 2;
+    badge.fills = [{ type: 'SOLID', color }];
+    card.appendChild(badge);
+    
+    // Number in badge
+    const numText = figma.createText();
+    numText.characters = String(num);
+    numText.fontSize = 10;
+    numText.fontName = { family: "Inter", style: "Bold" };
+    numText.fills = [{ type: 'SOLID', color: { r: 1, g: 1, b: 1 } }];
+    numText.textAlignHorizontal = 'CENTER';
+    numText.textAlignVertical = 'CENTER';
+    numText.resize(18, 18);
+    numText.x = panelX;
+    numText.y = currentY + 2;
+    card.appendChild(numText);
+    
+    // Category tag
+    const category = figma.createText();
+    category.characters = (insight.category || 'general').toUpperCase();
+    category.fontSize = 9;
+    category.fontName = { family: "Inter", style: "Bold" };
+    category.fills = [{ type: 'SOLID', color: { r: 0.6, g: 0.6, b: 0.6 } }];
+    category.x = panelX + 24;
+    category.y = currentY + 4;
+    card.appendChild(category);
+    
+    // Message text
+    const message = figma.createText();
+    const msgText = insight.message || 'No message';
+    message.characters = msgText.length > 60 ? msgText.slice(0, 57) + '...' : msgText;
+    message.fontSize = 11;
+    message.fontName = { family: "Inter", style: "Regular" };
+    message.fills = [{ type: 'SOLID', color: COLORS.title }];
+    message.x = panelX + 24;
+    message.y = currentY + 14;
+    card.appendChild(message);
+    
+    currentY += INSIGHTS_PANEL_ROW_HEIGHT;
   }
 }
