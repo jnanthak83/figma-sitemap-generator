@@ -207,7 +207,12 @@ app.get('/api/projects', async (req, res) => {
     ...legacyProjects
   ];
   
-  allProjects.sort((a, b) => new Date(b.captured_at) - new Date(a.captured_at));
+  // Sort by date + time (most recent first)
+  allProjects.sort((a, b) => {
+    const dateA = new Date(`${a.captured_at}T${a.captured_at_time || '00:00'}`);
+    const dateB = new Date(`${b.captured_at}T${b.captured_at_time || '00:00'}`);
+    return dateB - dateA;
+  });
   res.json(allProjects);
 });
 
@@ -313,6 +318,24 @@ app.delete('/api/projects/:projectId', (req, res) => {
   } else {
     res.status(404).json({ error: 'Project not found' });
   }
+});
+
+// Flush all captures (clear cache)
+app.delete('/api/captures', (req, res) => {
+  if (!fs.existsSync(BASE_DIR)) {
+    return res.json({ success: true, deleted: 0 });
+  }
+
+  const items = fs.readdirSync(BASE_DIR);
+  let deleted = 0;
+
+  for (const item of items) {
+    const itemPath = path.join(BASE_DIR, item);
+    fs.rmSync(itemPath, { recursive: true, force: true });
+    deleted++;
+  }
+
+  res.json({ success: true, deleted });
 });
 
 // Legacy discover (single site)
