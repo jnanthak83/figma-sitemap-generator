@@ -463,8 +463,9 @@ User-provided text, one criterion per line:
 - [x] Draw numbered hotspot markers on screenshots at element positions
 - [x] Color-code markers by severity (🟢 good, 🟡 warning, 🔴 issue)
 - [x] Auto-run analysis after capture when rubric or elements present
-- [ ] Create collapsible side panel per card showing insights list
-- [ ] Click hotspot → highlight corresponding insight in panel
+- [x] Create insights panel below screenshots showing insights list
+- [x] Panel shows: number badge, category tag, message (max 5 per card)
+- [ ] Click hotspot → highlight corresponding insight in panel (deferred)
 
 ### Phase 5: API Updates ⬜ TODO
 - [ ] `POST /api/projects/:id/analyze` — trigger analysis with rubric
